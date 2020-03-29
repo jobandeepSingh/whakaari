@@ -29,8 +29,25 @@ class TestTremorData(unittest.TestCase):
         td = TremorData()
         mock_assess.assert_called_once() # Good test
         # mock_assess.assert_not_called() # Shows what a failed test looks like
+        del td
+
+    def test_assess(self):
+        # Make sure that correct eruption data is read
+        
+        # If no data file then update with default times
+
+        # Reads a csv wtih correct start and end times
 
     def test_update(self):
+        pass
+
+    def test_compute_transforms(self):
+        pass
+
+    def test_is_eruption_in(self):
+        pass
+
+    def test_get_data(self):
         pass
 
 
