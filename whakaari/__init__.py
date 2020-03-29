@@ -84,10 +84,11 @@ class TremorData(object):
         plot
             Plot tremor data.
     """
-    def __init__(self, raw_data=False):
+    def __init__(self, raw_data=False, n_jobs=6):
         self.use_raw = raw_data
+        self.n_jobs = n_jobs
         if self.use_raw:
-            self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','raw_tremor_data.dat'])
+            self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','features_tremor_data.dat'])
         else:
             self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','tremor_data.dat'])
         self._assess()
@@ -163,6 +164,210 @@ class TremorData(object):
             if 0 < (te-from_time).total_seconds()/(3600*24) < days:
                 return 1.
         return 0.
+    def _load_data(self, ti, tf):
+        """ Load feature matrix and label vector.
+
+            Parameters:
+            -----------
+            ti : str, datetime
+                Beginning of period to load features.
+            tf : str, datetime
+                End of period to load features.
+
+            Returns:
+            --------
+            fM : pd.DataFrame
+                Feature matrix.
+            ys : pd.DataFrame
+                Label vector.
+        """
+        # return pre loaded
+        try:
+            if ti == self.ti_prev and tf == self.tf_prev:
+                return self.fM, self.ys
+        except AttributeError:
+            pass
+
+        # read from CSV file
+        try:
+            t = pd.to_datetime(pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], usecols=['time'], infer_datetime_format=True).index.values)
+            if (t[0] <= ti) and (t[-1] >= tf):
+                self.ti_prev = ti
+                self.tf_prev = tf
+                fM,ys = self._extract_features(ti,tf)
+                self.fM = fM
+                self.ys = ys
+                return fM,ys
+        except FileNotFoundError:
+            pass
+
+        # range checking
+        if tf > self.data.tf:
+            raise ValueError("Model end date '{:s}' beyond data range '{:s}'".format(tf, self.data.tf))
+        if ti < self.data.ti:
+            raise ValueError("Model start date '{:s}' predates data range '{:s}'".format(ti, self.data.ti))
+        
+        # divide training period into years
+        # TODO need to make this much smaller than years for realtime data looking at only a 3 weeks worth of data
+        # TODO *
+        ts = [datetime(*[yr, 1, 1, 0, 0, 0]) for yr in list(range(ti.year+1, tf.year+1))]
+        if ti - self.dtw < self.data.ti:
+            ti = self.data.ti + self.dtw
+        ts.insert(0,ti)
+        ts.append(tf)
+
+        for t0,t1 in zip(ts[:-1], ts[1:]):
+            print('feature extraction {:s} to {:s}'.format(t0.strftime('%Y-%m-%d'), t1.strftime('%Y-%m-%d')))
+            fM,ys = self._extract_features(ti,t1)
+
+        self.ti_prev = ti
+        self.tf_prev = tf
+        self.fM = fM
+        self.ys = ys
+        return fM, ys
+    def _extract_features(self, ti, tf):
+        """ Extract features from windowed data.
+
+            Parameters:
+            -----------
+            ti : datetime.datetime
+                End of first window.
+            tf : datetime.datetime
+                End of last window.
+
+            Returns:
+            --------
+            fm : pandas.Dataframe
+                tsfresh feature matrix extracted from data windows.
+            ys : pandas.Dataframe
+                Label vector corresponding to data windows
+
+            Notes:
+            ------
+            Saves feature matrix to $rootdir/features/$root_features.csv to avoid recalculation.
+        """
+        makedir(self.featdir)
+
+        # number of windows in feature request
+        Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
+
+        # features to compute
+        cfp = ComprehensiveFCParameters()
+        if self.compute_only_features:
+            cfp = dict([(k, cfp[k]) for k in cfp.keys() if k in self.compute_only_features])
+        else:
+            # drop features if relevant
+            _ = [cfp.pop(df) for df in self.drop_features if df in list(cfp.keys())]
+
+        # check if feature matrix already exists and what it contains
+        # QUESTION so when defining a new root need to make sure to that it incorporates bunch of info or else new data stream issue
+        if os.path.isfile(self.featfile):
+            t = pd.to_datetime(pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], usecols=['time'], infer_datetime_format=True).index.values)
+            ti0,tf0 = t[0],t[-1]
+            Nw0 = len(t)
+            hds = pd.read_csv(self.featfile, index_col=0, nrows=1)
+            hds = list(set([hd.split('__')[1] for hd in hds]))
+
+            # option 1, expand rows
+            # TODO Different names as left/right refering to rows is weird?
+            pad_left = int((ti0-ti)/self.dto)# if ti < ti0 else 0
+            pad_right = int(((ti+(Nw-1)*self.dto)-tf0)/self.dto)# if tf > tf0 else 0
+            # QUESTION is abs needed? Change order of ti0 and ti 2 lines above instead?
+            i0 = abs(pad_left) if pad_left<0 else 0
+            i1 = Nw0 + max([pad_left,0]) + pad_right
+            
+            # option 2, expand columns
+            existing_cols = set(hds)        # these features already calculated, in file
+            new_cols = set(cfp.keys()) - existing_cols     # these features to be added
+            more_cols = bool(new_cols)
+            all_cols = existing_cols|new_cols
+            cfp = ComprehensiveFCParameters()
+            cfp = dict([(k, cfp[k]) for k in cfp.keys() if k in all_cols])
+
+            # option 3, expand both
+            if any([more_cols, pad_left > 0, pad_right > 0]) and self.update_feature_matrix:
+                fm = pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], infer_datetime_format=True)
+                if more_cols:
+                    # expand columns now
+                    df0, wd = self._construct_windows(Nw0, ti0)
+                    cfp0 = ComprehensiveFCParameters()
+                    cfp0 = dict([(k, cfp0[k]) for k in cfp0.keys() if k in new_cols])
+                    fm2 = extract_features(df0, column_id='id', n_jobs=self.n_jobs, default_fc_parameters=cfp0, impute_function=impute)
+                    fm2.index = pd.Series(wd)
+                    
+                    fm = pd.concat([fm,fm2], axis=1, sort=False)
+
+                # check if updates required because training period expanded
+                    # expanded earlier
+                if pad_left > 0:
+                    df, wd = self._construct_windows(Nw, ti, i1=pad_left)
+                    fm2 = extract_features(df, column_id='id', n_jobs=self.n_jobs, default_fc_parameters=cfp, impute_function=impute)
+                    fm2.index = pd.Series(wd)
+                    fm = pd.concat([fm2,fm], sort=False)
+                    # expanded later
+                if pad_right > 0:
+                    df, wd = self._construct_windows(Nw, ti, i0=Nw - pad_right)
+                    fm2 = extract_features(df, column_id='id', n_jobs=self.n_jobs, default_fc_parameters=cfp, impute_function=impute)
+                    fm2.index = pd.Series(wd)
+                    fm = pd.concat([fm,fm2], sort=False)
+                
+                # write updated file output
+                fm.to_csv(self.featfile, index=True, index_label='time')
+                # trim output
+                fm = fm.iloc[i0:i1]    
+            else:
+                # read relevant part of matrix
+                fm = pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], infer_datetime_format=True, header=0, skiprows=range(1,i0+1), nrows=i1-i0)
+        else:
+            # create feature matrix from scratch   
+            df, wd = self._construct_windows(Nw, ti)
+            fm = extract_features(df, column_id='id', n_jobs=self.n_jobs, default_fc_parameters=cfp, impute_function=impute)
+            fm.index = pd.Series(wd)
+            fm.to_csv(self.featfile, index=True, index_label='time')
+            
+        ys = pd.DataFrame(self._get_label(fm.index.values), columns=['label'], index=fm.index)
+        return fm, ys
+    def _construct_windows(self, Nw, ti, i0=0, i1=None):
+        """ Create overlapping data windows for feature extraction.
+
+            Parameters:
+            -----------
+            Nw : int
+                Number of windows to create.
+            ti : datetime.datetime
+                End of first window.
+            i0 : int
+                Skip i0 initial windows.
+            i1 : int
+                # QUESTION how does this skip the final i1 windows?
+                Skip i1 final windows.
+
+            Returns:
+            --------
+            df : pandas.DataFrame
+                Dataframe of windowed data, with 'id' column denoting individual windows.
+            window_dates : list
+                Datetime objects corresponding to the beginning of each data window.
+        """
+        if i1 is None:
+            i1 = Nw
+
+        # get data for windowing period
+        df = self.data.get_data(ti-self.dtw, ti+(Nw-1)*self.dto)[self.data_streams]
+
+        # create windows
+        dfs = []
+        for i in range(i0, i1):
+            # QUESTION what is the [:] for?
+            dfi = df[:].iloc[i*(self.iw-self.io):i*(self.iw-self.io)+self.iw]
+            try:
+                dfi['id'] = pd.Series(np.ones(self.iw, dtype=int)*i, index=dfi.index)
+            except ValueError:
+                print('hi')
+            dfs.append(dfi)
+        df = pd.concat(dfs)
+        window_dates = [ti + i*self.dto for i in range(Nw)]
+        return df, window_dates[i0:i1]
     def update(self, ti=None, tf=None):
         """ Obtain latest GeoNet data.
 
@@ -194,8 +399,8 @@ class TremorData(object):
             pars = [[i,ti,1] for i in range(ndays)]
         else:
             pars = [[i,ti] for i in range(ndays)]
-        # Changed number of pools from 4 to 6 for my machine
-        p = Pool(4)
+        # added n_jobs for TremorData class
+        p = Pool(self.n_jobs)
         p.starmap(get_data_for_day, pars)
         p.close()
         p.join()
@@ -225,6 +430,10 @@ class TremorData(object):
         for i in range(1,int(np.floor(self.df.shape[0]/(24*6)))): 
             ind = i*24*6
             self.df['dsar'][ind] = 0.5*(self.df['dsar'][ind-1]+self.df['dsar'][ind+1])
+        
+        if self.use_raw:
+            # Form windows and find find features
+            pass
 
         self.df.to_csv(self.file, index=True)
         self.ti = self.df.index[0]
@@ -446,14 +655,18 @@ class ForecastModel(object):
             Corner plot of feature correlation.
     """
     # QUESTION what is the use of self.ti_model and self.tf_model except for default values when training?
-    def __init__(self, window, overlap, look_forward, ti=None, tf=None, data_streams=['rsam','mf','hf','dsar'], root=None):
+    def __init__(self, window, overlap, look_forward, ti=None, tf=None, data_streams=['rsam','mf','hf','dsar'], root=None, raw_data=False):
+        self.use_raw = raw_data
         self.window = window
         self.overlap = overlap
         self.look_forward = look_forward
         self.data_streams = data_streams
-        self.data = TremorData()
-        if any(['_' in ds for ds in data_streams]):
-            self.data._compute_transforms()
+        self.data = TremorData(raw_data=self.use_raw)
+        
+        # Transforms are not used
+        # if any(['_' in ds for ds in data_streams]):
+        #     self.data.df._compute_transforms()
+
         if any([d not in self.data.df.columns for d in self.data_streams]):
             raise ValueError("data restricted to any of {}".format(self.data.df.columns))
         if ti is None: ti = self.data.ti
