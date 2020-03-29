@@ -84,8 +84,12 @@ class TremorData(object):
         plot
             Plot tremor data.
     """
-    def __init__(self):
-        self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','tremor_data.dat'])
+    def __init__(self, raw_data=False):
+        self.use_raw = raw_data
+        if self.use_raw:
+            self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','raw_tremor_data.dat'])
+        else:
+            self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','tremor_data.dat'])
         self._assess()
     def __repr__(self):
         if self.exists:
@@ -183,9 +187,15 @@ class TremorData(object):
 
         ndays = (tf-ti).days
 
+        # TODO test speed for different parallel configs for the use_raw (Maybe get data for less than a day at a time?)
+        # TODO maybe do raw data one step transform another step?
         # parallel data collection - creates temporary files in ./_tmp
-        pars = [[i,ti] for i in range(ndays)]
-        p = Pool(6)
+        if self.use_raw:
+            pars = [[i,ti,1] for i in range(ndays)]
+        else:
+            pars = [[i,ti] for i in range(ndays)]
+        # Changed number of pools from 4 to 6 for my machine
+        p = Pool(4)
         p.starmap(get_data_for_day, pars)
         p.close()
         p.join()
@@ -435,6 +445,7 @@ class ForecastModel(object):
         plot_feature_correlation
             Corner plot of feature correlation.
     """
+    # QUESTION what is the use of self.ti_model and self.tf_model except for default values when training?
     def __init__(self, window, overlap, look_forward, ti=None, tf=None, data_streams=['rsam','mf','hf','dsar'], root=None):
         self.window = window
         self.overlap = overlap
@@ -455,8 +466,10 @@ class ForecastModel(object):
             raise ValueError("Model start date '{:s}' predates data range '{:s}'".format(self.ti_model, self.data.ti))
         self.dtw = timedelta(days=self.window)
         self.dtf = timedelta(days=self.look_forward)
+        # TODO Need to change this as well for real time data
         self.dt = timedelta(seconds=600)
         self.dto = (1.-self.overlap)*self.dtw
+        # TODO Need to change this for 20 minute windows?
         self.iw = int(self.window*6*24)         
         self.io = int(self.overlap*self.iw)      
         if self.io == self.iw: self.io -= 1
@@ -519,6 +532,7 @@ class ForecastModel(object):
             i0 : int
                 Skip i0 initial windows.
             i1 : int
+                # QUESTION how does this skip the final i1 windows?
                 Skip i1 final windows.
 
             Returns:
@@ -537,6 +551,7 @@ class ForecastModel(object):
         # create windows
         dfs = []
         for i in range(i0, i1):
+            # QUESTION what is the [:] for?
             dfi = df[:].iloc[i*(self.iw-self.io):i*(self.iw-self.io)+self.iw]
             try:
                 dfi['id'] = pd.Series(np.ones(self.iw, dtype=int)*i, index=dfi.index)
@@ -581,6 +596,7 @@ class ForecastModel(object):
             _ = [cfp.pop(df) for df in self.drop_features if df in list(cfp.keys())]
 
         # check if feature matrix already exists and what it contains
+        # QUESTION so when defining a new root need to make sure to that it incorporates bunch of info or else new data stream issue
         if os.path.isfile(self.featfile):
             t = pd.to_datetime(pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], usecols=['time'], infer_datetime_format=True).index.values)
             ti0,tf0 = t[0],t[-1]
@@ -589,8 +605,10 @@ class ForecastModel(object):
             hds = list(set([hd.split('__')[1] for hd in hds]))
 
             # option 1, expand rows
+            # TODO Different names as left/right refering to rows is weird?
             pad_left = int((ti0-ti)/self.dto)# if ti < ti0 else 0
             pad_right = int(((ti+(Nw-1)*self.dto)-tf0)/self.dto)# if tf > tf0 else 0
+            # QUESTION is abs needed? Change order of ti0 and ti 2 lines above instead?
             i0 = abs(pad_left) if pad_left<0 else 0
             i1 = Nw0 + max([pad_left,0]) + pad_right
             
@@ -703,6 +721,8 @@ class ForecastModel(object):
             raise ValueError("Model start date '{:s}' predates data range '{:s}'".format(ti, self.data.ti))
         
         # divide training period into years
+        # TODO need to make this much smaller than years for realtime data looking at only a 3 weeks worth of data
+        # TODO *
         ts = [datetime(*[yr, 1, 1, 0, 0, 0]) for yr in list(range(ti.year+1, tf.year+1))]
         if ti - self.dtw < self.data.ti:
             ti = self.data.ti + self.dtw
@@ -1626,7 +1646,7 @@ def get_classifier(classifier):
     
     return model, grid
 
-def get_data_for_day(i,t0):
+def get_data_for_day(i,t0,secs_per_win=600):
     """ Download WIZ data for given 24 hour period, writing data to temporary file.
 
         Parameters:
@@ -1658,6 +1678,7 @@ def get_data_for_day(i,t0):
         WIZ = client.get_waveforms('NZ','WIZ', "10", "HHZ", t0+i*daysec, t0 + (i+1)*daysec)
         
         # if less than 1 day of data, try different client
+        # TODO why less than 600*100
         if len(WIZ.traces[0].data) < 600*100:
             raise FDSNNoDataException('')
     except ObsPyMSEEDFilesizeTooSmallError:
@@ -1674,14 +1695,18 @@ def get_data_for_day(i,t0):
     ti = WIZ.traces[0].meta['starttime']
         # round start time to nearest 10 min increment
     tiday = UTCDateTime("{:d}-{:02d}-{:02d} 00:00:00".format(ti.year, ti.month, ti.day))
-    ti = tiday+int(np.round((ti-tiday)/600))*600
-    N = 600*100                             # 10 minute windows in seconds
+
+    ti = tiday+int(np.round((ti-tiday)/secs_per_win))*secs_per_win
+    N = secs_per_win*100                 # numbers of observations per window in data
     Nm = int(N*np.floor(len(data)/N))
     for data_stream, name in zip(data_streams, names):
         filtered_data = bandpass(data, data_stream[0], data_stream[1], 100)
         filtered_data = abs(filtered_data[:Nm])
         datas.append(filtered_data.reshape(-1,N).mean(axis=-1)*1.e9)
 
+    
+    # QUESTION Does integration and bandpass order matter? Paper says other way around
+    # Would save a lot of below computations if other way around maybe?
     # compute dsar
     data = cumtrapz(data, dx=1./100, initial=0)
     data -= np.mean(data)
@@ -1699,7 +1724,7 @@ def get_data_for_day(i,t0):
 
     # write out temporary file
     datas = np.array(datas)
-    time = [(ti+j*600).datetime for j in range(datas.shape[1])]
+    time = [(ti+j*secs_per_win).datetime for j in range(datas.shape[1])]
     df = pd.DataFrame(zip(*datas), columns=names, index=pd.Series(time))
     df.to_csv('_tmp/_tmp_fl_{:05d}.dat'.format(i), index=True, index_label='time')
 
@@ -1717,6 +1742,7 @@ def train_one_model(fM, ys, Nfts, modeldir, classifier, retrain, random_seed, ra
     fMt.index = yst.index
 
     # find significant features
+    # QUESTION IMPORTANT does this give the save features everytime?
     select = FeatureSelector(n_jobs=0, ml_task='classification')
     select.fit_transform(fMt,yst)
     fts = select.features[:Nfts]
@@ -1727,6 +1753,7 @@ def train_one_model(fM, ys, Nfts, modeldir, classifier, retrain, random_seed, ra
             fp.write('{:4.3e} {:s}\n'.format(pv, f))
 
     # get sklearn training objects
+    # TODO Why shufflesplit?
     ss = ShuffleSplit(n_splits=5, test_size=0.25, random_state=random_state+random_seed)
     model, grid = get_classifier(classifier)            
         
