@@ -17,6 +17,9 @@ warnings.filterwarnings("ignore", category=FitFailedWarning)
 
 if __name__ == "__main__":
     td = TremorData(raw_data=True, n_jobs=4)
+    print(td.ti)
+    td.update()
+
     # td = TremorData()
     
     # _DAY = timedelta(days=1.)

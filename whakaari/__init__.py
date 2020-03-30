@@ -648,13 +648,13 @@ class ForecastModel(object):
             Corner plot of feature correlation.
     """
     # QUESTION what is the use of self.ti_model and self.tf_model except for default values when training?
-    def __init__(self, window, overlap, look_forward, ti=None, tf=None, data_streams=['rsam','mf','hf','dsar'], root=None, raw_data=False):
+    def __init__(self, window, overlap, look_forward, ti=None, tf=None, data_streams=['rsam','mf','hf','dsar'], root=None, raw_data=False, n_jobs=6):
         self.use_raw = raw_data
         self.window = window
         self.overlap = overlap
         self.look_forward = look_forward
         self.data_streams = data_streams
-        self.data = TremorData(raw_data=self.use_raw, n_jobs=4)
+        self.data = TremorData(raw_data=self.use_raw, n_jobs=n_jobs)
         
         # Transforms are not used
         # if any(['_' in ds for ds in data_streams]):
