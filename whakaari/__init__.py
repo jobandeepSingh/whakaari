@@ -55,7 +55,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-
+# QUESTION can vlf anf lf be deleted?
 datas = ['rsam','mf','hf','dsar']
 all_classifiers = ["SVM","KNN",'DT','RF','NN','NB','LR']
 _MONTH = timedelta(days=365.25/12)
@@ -232,6 +232,8 @@ class TremorData(object):
         # number of windows in feature request
         # Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
         self.dt = timedelta(seconds=self.secs_between_obs)
+        print("IN:tf", tf, type(tf))
+        print("IN:ti", ti, type(ti))
         Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
 
         # dto - length of non-overlapping section of window (timedelta)
@@ -338,8 +340,6 @@ class TremorData(object):
         return df, window_dates[i0:i1]
     def update(self, ti=None, tf=None):
         """ Obtain latest GeoNet data.
-            # TODO passing in ti or tf as strings actually gives an error
-            # TypeError: unsupported operand type(s) for -: 'str' and 'UTCDateTime'
             Parameters:
             -----------
             ti : str, datetime.datetime
@@ -363,6 +363,7 @@ class TremorData(object):
 
         # TODO test speed for different parallel configs for the use_raw (Maybe get data for less than a day at a time?)
         # TODO maybe do raw data one step transform another step?
+        # TODO make secs_between_obs a parameter for the constructor?? And then turn use_raw into use_features_as_data?
         # parallel data collection - creates temporary files in ./_tmp
         if self.use_raw:
             self.secs_between_obs = 5
@@ -385,13 +386,15 @@ class TremorData(object):
         # special case of no file to update - create new file
         if not self.exists:
             if self.use_raw:
-                ti=datetime(ti.year,ti.month,ti.day,0,0,0)
-                tf=datetime(tf.year,tf.month,tf.day,0,0,0)
+                ti=datetime(ti.year,ti.month,ti.day,ti.hour,ti.minute,ti.second)
+                tf=datetime(tf.year,tf.month,tf.day,tf.hour,tf.minute,tf.second)
                 shutil.copyfile('_tmp/_tmp_fl_00000.dat',self.raw_file)
                 self.exists = True
                 shutil.rmtree('_tmp')
                 self.df = pd.read_csv(self.raw_file, index_col=0, parse_dates=[0,], infer_datetime_format=True)
-                fm = get_raw_features()
+                #fm = get_raw_features()
+                print("starting feature extraction for data")
+                fm = self._load_data(ti, tf)
                 self.df = fm
                 # gc.collect()
                 return
@@ -420,8 +423,12 @@ class TremorData(object):
         self.df = self.df.loc[~self.df.index.duplicated(keep='last')]
         if self.use_raw:
             self.df = self.df.resample('1S').interpolate('linear')
+            ti=datetime(ti.year,ti.month,ti.day,ti.hour,ti.minute,ti.second)
+            tf=datetime(tf.year,tf.month,tf.day,tf.hour,tf.minute,tf.second)
             self.df.to_csv(self.raw_file, index=True)
-            fm = get_raw_features()
+            #fm = get_raw_features()
+            print("starting feature extraction for data",ti,tf)
+            fm = self._load_data(ti, tf)
             self.df = fm
             # gc.collect()
         else:
@@ -432,6 +439,9 @@ class TremorData(object):
                 ind = i*24*6
                 self.df['dsar'][ind] = 0.5*(self.df['dsar'][ind-1]+self.df['dsar'][ind+1])
                 self.df.to_csv(self.file, index=True)
+
+        self.ti = self.df.index[0]
+        self.tf = self.df.index[-1]
     def get_data(self, ti=None, tf=None):
         """ Return tremor data in requested date range.
 
