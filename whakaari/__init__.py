@@ -198,8 +198,8 @@ class TremorData(object):
         # divide training period into years
         # TODO need to make this much smaller than years for realtime data looking at only a 3 weeks worth of data
         ts = [datetime(yr, 1, 1, 0, 0, 0) for yr in list(range(ti.year+1, tf.year+1))]
-        if ti - self.dtw < self.df.index.values[0]:
-            ti = self.df.index.values[0] + self.dtw
+        if ti - self.dtw < self.df.index[0]:
+            ti = self.df.index[0] + self.dtw
         ts.insert(0,ti)
         ts.append(tf)
 
@@ -228,10 +228,11 @@ class TremorData(object):
         # iw - number of samples in window (int)
         self.iw = int((20*60)/self.secs_between_obs)     # 20 min windows
         # io - number of samples in overlapping section of window (int)
-        self.io = int(0.5 * iw)          # 10 min overlap
+        self.io = int(0.5 * self.iw)          # 10 min overlap
         # number of windows in feature request
         # Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
-        Nw = int(np.floor(((tf-ti)/timedelta(seconds=self.secs_between_obs))/(self.iw-self.io)))
+        self.dt = timedelta(seconds=self.secs_between_obs)
+        Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
 
         # dto - length of non-overlapping section of window (timedelta)
         self.dto = 0.5 * self.dtw
@@ -363,7 +364,7 @@ class TremorData(object):
         # TODO maybe do raw data one step transform another step?
         # parallel data collection - creates temporary files in ./_tmp
         if self.use_raw:
-            self.secs_between_obs = 1
+            self.secs_between_obs = 5
             pars = [[i,ti,self.secs_between_obs] for i in range(ndays)]
         else:
             pars = [[i,ti] for i in range(ndays)]
@@ -383,11 +384,13 @@ class TremorData(object):
         # special case of no file to update - create new file
         if not self.exists:
             if self.use_raw:
+                ti=datetime(ti.year,ti.month,ti.day,0,0,0)
+                tf=datetime(tf.year,tf.month,tf.day,0,0,0)
                 shutil.copyfile('_tmp/_tmp_fl_00000.dat',self.raw_file)
                 self.exists = True
                 shutil.rmtree('_tmp')
                 self.df = pd.read_csv(self.raw_file, index_col=0, parse_dates=[0,], infer_datetime_format=True)
-                fm = self.get_raw_features()
+                fm = get_raw_features()
                 self.df = fm
                 # gc.collect()
                 return
@@ -417,7 +420,7 @@ class TremorData(object):
         if self.use_raw:
             self.df = self.df.resample('1S').interpolate('linear')
             self.df.to_csv(self.raw_file, index=True)
-            fm = self.get_raw_features()
+            fm = get_raw_features()
             self.df = fm
             # gc.collect()
         else:
