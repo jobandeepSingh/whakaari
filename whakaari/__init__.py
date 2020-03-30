@@ -338,7 +338,8 @@ class TremorData(object):
         return df, window_dates[i0:i1]
     def update(self, ti=None, tf=None):
         """ Obtain latest GeoNet data.
-
+            # TODO passing in ti or tf as strings actually gives an error
+            # TypeError: unsupported operand type(s) for -: 'str' and 'UTCDateTime'
             Parameters:
             -----------
             ti : str, datetime.datetime
