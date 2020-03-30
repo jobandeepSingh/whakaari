@@ -63,6 +63,7 @@ _DAY = timedelta(days=1.)
 
 makedir = lambda name: os.makedirs(name, exist_ok=True)
 
+# TODO possible memory issue with feature matrix?
 class TremorData(object):
     """ Object to manage acquisition and processing of seismic data.
         
@@ -89,6 +90,7 @@ class TremorData(object):
         self.n_jobs = n_jobs
         if self.use_raw:
             self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','features_tremor_data.dat'])
+            self.raw_file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','raw_tremor_data.dat'])
         else:
             self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','tremor_data.dat'])
         self._assess()
@@ -106,6 +108,7 @@ class TremorData(object):
         with open(os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','eruptive_periods.txt']),'r') as fp:
             self.tes = [datetimeify(ln.rstrip()) for ln in fp.readlines()]
         # check if data file exists
+        # TODO Better checks
         self.exists = os.path.isfile(self.file)
         if not self.exists:
             t0 = datetime(2011,1,1)
@@ -165,7 +168,7 @@ class TremorData(object):
                 return 1.
         return 0.
     def _load_data(self, ti, tf):
-        """ Load feature matrix and label vector.
+        """ Load feature matrix (which is now the dataset).
 
             Parameters:
             -----------
@@ -178,53 +181,33 @@ class TremorData(object):
             --------
             fM : pd.DataFrame
                 Feature matrix.
-            ys : pd.DataFrame
-                Label vector.
         """
-        # return pre loaded
-        try:
-            if ti == self.ti_prev and tf == self.tf_prev:
-                return self.fM, self.ys
-        except AttributeError:
-            pass
-
         # read from CSV file
         try:
-            t = pd.to_datetime(pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], usecols=['time'], infer_datetime_format=True).index.values)
+            t = pd.to_datetime(pd.read_csv(self.file, index_col=0, parse_dates=['time'], usecols=['time'], infer_datetime_format=True).index.values)
             if (t[0] <= ti) and (t[-1] >= tf):
-                self.ti_prev = ti
-                self.tf_prev = tf
-                fM,ys = self._extract_features(ti,tf)
-                self.fM = fM
-                self.ys = ys
-                return fM,ys
+                # self.ti_prev = ti
+                # self.tf_prev = tf
+                fM = self._extract_features(ti,tf)
+                return fM
         except FileNotFoundError:
             pass
 
-        # range checking
-        if tf > self.data.tf:
-            raise ValueError("Model end date '{:s}' beyond data range '{:s}'".format(tf, self.data.tf))
-        if ti < self.data.ti:
-            raise ValueError("Model start date '{:s}' predates data range '{:s}'".format(ti, self.data.ti))
-        
+        self.dtw = timedelta(minutes = 20)
+
         # divide training period into years
         # TODO need to make this much smaller than years for realtime data looking at only a 3 weeks worth of data
-        # TODO *
-        ts = [datetime(*[yr, 1, 1, 0, 0, 0]) for yr in list(range(ti.year+1, tf.year+1))]
-        if ti - self.dtw < self.data.ti:
-            ti = self.data.ti + self.dtw
+        ts = [datetime(yr, 1, 1, 0, 0, 0) for yr in list(range(ti.year+1, tf.year+1))]
+        if ti - self.dtw < self.df.index.values[0]:
+            ti = self.df.index.values[0] + self.dtw
         ts.insert(0,ti)
         ts.append(tf)
 
         for t0,t1 in zip(ts[:-1], ts[1:]):
             print('feature extraction {:s} to {:s}'.format(t0.strftime('%Y-%m-%d'), t1.strftime('%Y-%m-%d')))
-            fM,ys = self._extract_features(ti,t1)
+            fM = self._extract_features(t0,t1)
 
-        self.ti_prev = ti
-        self.tf_prev = tf
-        self.fM = fM
-        self.ys = ys
-        return fM, ys
+        return fM
     def _extract_features(self, ti, tf):
         """ Extract features from windowed data.
 
@@ -241,32 +224,34 @@ class TremorData(object):
                 tsfresh feature matrix extracted from data windows.
             ys : pandas.Dataframe
                 Label vector corresponding to data windows
-
-            Notes:
-            ------
-            Saves feature matrix to $rootdir/features/$root_features.csv to avoid recalculation.
         """
-        makedir(self.featdir)
-
+        # iw - number of samples in window (int)
+        self.iw = int((20*60)/self.secs_between_obs)     # 20 min windows
+        # io - number of samples in overlapping section of window (int)
+        self.io = int(0.5 * iw)          # 10 min overlap
         # number of windows in feature request
-        Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
+        # Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
+        Nw = int(np.floor(((tf-ti)/timedelta(seconds=self.secs_between_obs))/(self.iw-self.io)))
+
+        # dto - length of non-overlapping section of window (timedelta)
+        self.dto = 0.5 * self.dtw
 
         # features to compute
         cfp = ComprehensiveFCParameters()
-        if self.compute_only_features:
-            cfp = dict([(k, cfp[k]) for k in cfp.keys() if k in self.compute_only_features])
-        else:
-            # drop features if relevant
-            _ = [cfp.pop(df) for df in self.drop_features if df in list(cfp.keys())]
+        # if self.compute_only_features:
+        #     cfp = dict([(k, cfp[k]) for k in cfp.keys() if k in self.compute_only_features])
+        # else:
+        #     # drop features if relevant
+        #     _ = [cfp.pop(df) for df in self.drop_features if df in list(cfp.keys())]
 
         # check if feature matrix already exists and what it contains
         # QUESTION so when defining a new root need to make sure to that it incorporates bunch of info or else new data stream issue
-        if os.path.isfile(self.featfile):
-            t = pd.to_datetime(pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], usecols=['time'], infer_datetime_format=True).index.values)
+        if os.path.isfile(self.file):
+            t = pd.to_datetime(pd.read_csv(self.file, index_col=0, parse_dates=['time'], usecols=['time'], infer_datetime_format=True).index.values)
             ti0,tf0 = t[0],t[-1]
             Nw0 = len(t)
-            hds = pd.read_csv(self.featfile, index_col=0, nrows=1)
-            hds = list(set([hd.split('__')[1] for hd in hds]))
+            # hds = pd.read_csv(self.file, index_col=0, nrows=1)
+            # hds = list(set([hd.split('__')[1] for hd in hds]))
 
             # option 1, expand rows
             # TODO Different names as left/right refering to rows is weird?
@@ -276,26 +261,9 @@ class TremorData(object):
             i0 = abs(pad_left) if pad_left<0 else 0
             i1 = Nw0 + max([pad_left,0]) + pad_right
             
-            # option 2, expand columns
-            existing_cols = set(hds)        # these features already calculated, in file
-            new_cols = set(cfp.keys()) - existing_cols     # these features to be added
-            more_cols = bool(new_cols)
-            all_cols = existing_cols|new_cols
-            cfp = ComprehensiveFCParameters()
-            cfp = dict([(k, cfp[k]) for k in cfp.keys() if k in all_cols])
-
             # option 3, expand both
-            if any([more_cols, pad_left > 0, pad_right > 0]) and self.update_feature_matrix:
-                fm = pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], infer_datetime_format=True)
-                if more_cols:
-                    # expand columns now
-                    df0, wd = self._construct_windows(Nw0, ti0)
-                    cfp0 = ComprehensiveFCParameters()
-                    cfp0 = dict([(k, cfp0[k]) for k in cfp0.keys() if k in new_cols])
-                    fm2 = extract_features(df0, column_id='id', n_jobs=self.n_jobs, default_fc_parameters=cfp0, impute_function=impute)
-                    fm2.index = pd.Series(wd)
-                    
-                    fm = pd.concat([fm,fm2], axis=1, sort=False)
+            if any([pad_left > 0, pad_right > 0]): #and self.update_feature_matrix:
+                fm = pd.read_csv(self.file, index_col=0, parse_dates=['time'], infer_datetime_format=True)
 
                 # check if updates required because training period expanded
                     # expanded earlier
@@ -312,21 +280,20 @@ class TremorData(object):
                     fm = pd.concat([fm,fm2], sort=False)
                 
                 # write updated file output
-                fm.to_csv(self.featfile, index=True, index_label='time')
+                fm.to_csv(self.file, index=True, index_label='time')
                 # trim output
                 fm = fm.iloc[i0:i1]    
             else:
                 # read relevant part of matrix
-                fm = pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], infer_datetime_format=True, header=0, skiprows=range(1,i0+1), nrows=i1-i0)
+                fm = pd.read_csv(self.file, index_col=0, parse_dates=['time'], infer_datetime_format=True, header=0, skiprows=range(1,i0+1), nrows=i1-i0)
         else:
             # create feature matrix from scratch   
             df, wd = self._construct_windows(Nw, ti)
             fm = extract_features(df, column_id='id', n_jobs=self.n_jobs, default_fc_parameters=cfp, impute_function=impute)
             fm.index = pd.Series(wd)
-            fm.to_csv(self.featfile, index=True, index_label='time')
+            fm.to_csv(self.file, index=True, index_label='time')
             
-        ys = pd.DataFrame(self._get_label(fm.index.values), columns=['label'], index=fm.index)
-        return fm, ys
+        return fm
     def _construct_windows(self, Nw, ti, i0=0, i1=None):
         """ Create overlapping data windows for feature extraction.
 
@@ -353,7 +320,7 @@ class TremorData(object):
             i1 = Nw
 
         # get data for windowing period
-        df = self.data.get_data(ti-self.dtw, ti+(Nw-1)*self.dto)[self.data_streams]
+        df = self.get_data(ti-self.dtw, ti+(Nw-1)*self.dto)#[self.data_streams]
 
         # create windows
         dfs = []
@@ -396,7 +363,8 @@ class TremorData(object):
         # TODO maybe do raw data one step transform another step?
         # parallel data collection - creates temporary files in ./_tmp
         if self.use_raw:
-            pars = [[i,ti,1] for i in range(ndays)]
+            self.secs_between_obs = 1
+            pars = [[i,ti,self.secs_between_obs] for i in range(ndays)]
         else:
             pars = [[i,ti] for i in range(ndays)]
         # added n_jobs for TremorData class
@@ -405,14 +373,35 @@ class TremorData(object):
         p.close()
         p.join()
 
+        def get_raw_features():
+            # Get features for 20 min windows (with 10 min overlap)
+            print("starting feature extraction for data")
+            fm = self._load_data(ti, tf)
+            return fm
+
+        # TODO IMPORTANT! EXTRACT FEATURES FROM TEMP FILES INSTEAD????
         # special case of no file to update - create new file
         if not self.exists:
-            shutil.copyfile('_tmp/_tmp_fl_00000.dat',self.file)
-            self.exists = True
-            shutil.rmtree('_tmp')
-            return
+            if self.use_raw:
+                shutil.copyfile('_tmp/_tmp_fl_00000.dat',self.raw_file)
+                self.exists = True
+                shutil.rmtree('_tmp')
+                self.df = pd.read_csv(self.raw_file, index_col=0, parse_dates=[0,], infer_datetime_format=True)
+                fm = self.get_raw_features()
+                self.df = fm
+                # gc.collect()
+                return
+            else:
+                shutil.copyfile('_tmp/_tmp_fl_00000.dat',self.file)
+                self.exists = True
+                shutil.rmtree('_tmp')
+                return
 
         # read temporary files in as dataframes for concatenation with existing data
+        # For this most of rest of this method use self.df as raw data, not features
+        if self.use_raw:
+            self.df = pd.read_csv(self.raw_file, index_col=0, parse_dates=[0,], infer_datetime_format=True)
+            # gc.collect()
         dfs = [self.df[datas]]
         for i in range(ndays):
             fl = '_tmp/_tmp_fl_{:05d}.dat'.format(i)
@@ -423,21 +412,22 @@ class TremorData(object):
         self.df = pd.concat(dfs)
 
         # impute missing data using linear interpolation and save file
+        # QUESTION why is this only called when updating but not self.exists
         self.df = self.df.loc[~self.df.index.duplicated(keep='last')]
-        self.df = self.df.resample('10T').interpolate('linear')
-
-        # remove artefact in computing dsar
-        for i in range(1,int(np.floor(self.df.shape[0]/(24*6)))): 
-            ind = i*24*6
-            self.df['dsar'][ind] = 0.5*(self.df['dsar'][ind-1]+self.df['dsar'][ind+1])
-        
         if self.use_raw:
-            # Form windows and find find features
-            pass
-
-        self.df.to_csv(self.file, index=True)
-        self.ti = self.df.index[0]
-        self.tf = self.df.index[-1]
+            self.df = self.df.resample('1S').interpolate('linear')
+            self.df.to_csv(self.raw_file, index=True)
+            fm = self.get_raw_features()
+            self.df = fm
+            # gc.collect()
+        else:
+            self.df = self.df.resample('10T').interpolate('linear')
+            # remove artefact in computing dsar
+            # QUESTION why is this only called when updating but not self.exists
+            for i in range(1,int(np.floor(self.df.shape[0]/(24*6)))): 
+                ind = i*24*6
+                self.df['dsar'][ind] = 0.5*(self.df['dsar'][ind-1]+self.df['dsar'][ind+1])
+                self.df.to_csv(self.file, index=True)
     def get_data(self, ti=None, tf=None):
         """ Return tremor data in requested date range.
 
@@ -661,7 +651,7 @@ class ForecastModel(object):
         self.overlap = overlap
         self.look_forward = look_forward
         self.data_streams = data_streams
-        self.data = TremorData(raw_data=self.use_raw)
+        self.data = TremorData(raw_data=self.use_raw, n_jobs=4)
         
         # Transforms are not used
         # if any(['_' in ds for ds in data_streams]):
@@ -834,6 +824,7 @@ class ForecastModel(object):
             cfp = dict([(k, cfp[k]) for k in cfp.keys() if k in all_cols])
 
             # option 3, expand both
+            # QUESTION update_feature_matrix is always true?
             if any([more_cols, pad_left > 0, pad_right > 0]) and self.update_feature_matrix:
                 fm = pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], infer_datetime_format=True)
                 if more_cols:

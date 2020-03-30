@@ -16,6 +16,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=FitFailedWarning)
 
 if __name__ == "__main__":
+    td = TremorData(raw_data=True, n_jobs=4)
     # td = TremorData()
     
     # _DAY = timedelta(days=1.)
@@ -24,9 +25,3 @@ if __name__ == "__main__":
     # t1 = UTCDateTime("{:d}-{:02d}-{:02d} 00:00:00".format(tf.year, tf.month, tf.day))
 
     # td.update(tf=t1)
-
-
-    ###### Raw Data Below #######
-
-    td = TremorData(raw_data=True)
-
