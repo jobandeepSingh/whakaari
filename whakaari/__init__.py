@@ -205,7 +205,7 @@ class TremorData(object):
 
         for t0,t1 in zip(ts[:-1], ts[1:]):
             print('feature extraction {:s} to {:s}'.format(t0.strftime('%Y-%m-%d'), t1.strftime('%Y-%m-%d')))
-            fM = self._extract_features(t0,t1)
+            fM = self._extract_features(ti,t1)
 
         return fM
     def _extract_features(self, ti, tf):
@@ -232,8 +232,8 @@ class TremorData(object):
         # number of windows in feature request
         # Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
         self.dt = timedelta(seconds=self.secs_between_obs)
-        print("IN:tf", tf, type(tf))
-        print("IN:ti", ti, type(ti))
+        # print("IN:tf", tf, type(tf))
+        # print("IN:ti", ti, type(ti))
         Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
 
         # dto - length of non-overlapping section of window (timedelta)
@@ -422,7 +422,7 @@ class TremorData(object):
         # QUESTION why is this only called when updating but not self.exists
         self.df = self.df.loc[~self.df.index.duplicated(keep='last')]
         if self.use_raw:
-            self.df = self.df.resample('1S').interpolate('linear')
+            self.df = self.df.resample(str(self.secs_between_obs)+'S').interpolate('linear')
             ti=datetime(ti.year,ti.month,ti.day,ti.hour,ti.minute,ti.second)
             tf=datetime(tf.year,tf.month,tf.day,tf.hour,tf.minute,tf.second)
             self.df.to_csv(self.raw_file, index=True)
@@ -439,6 +439,8 @@ class TremorData(object):
                 ind = i*24*6
                 self.df['dsar'][ind] = 0.5*(self.df['dsar'][ind-1]+self.df['dsar'][ind+1])
                 self.df.to_csv(self.file, index=True)
+
+        # update the column names if using 
 
         self.ti = self.df.index[0]
         self.tf = self.df.index[-1]
@@ -949,7 +951,7 @@ class ForecastModel(object):
 
         for t0,t1 in zip(ts[:-1], ts[1:]):
             print('feature extraction {:s} to {:s}'.format(t0.strftime('%Y-%m-%d'), t1.strftime('%Y-%m-%d')))
-            fM,ys = self._extract_features(ti,t1)
+            fM,ys = self._extract_features(t0,t1)
 
         self.ti_prev = ti
         self.tf_prev = tf
