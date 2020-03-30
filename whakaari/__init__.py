@@ -85,8 +85,12 @@ class TremorData(object):
         plot
             Plot tremor data.
     """
-    def __init__(self, raw_data=False, n_jobs=6):
+    def __init__(self, raw_data=False, n_jobs=6, secs_between_obs=5, feature_window_size=600, overlap=0.5):
         self.use_raw = raw_data
+        if self.use_raw:
+            self.secs_between_obs = secs_between_obs
+            self.window = feature_window_size
+            self.overlap = overlap
         self.n_jobs = n_jobs
         if self.use_raw:
             self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','features_tremor_data.dat'])
@@ -226,18 +230,19 @@ class TremorData(object):
                 Label vector corresponding to data windows
         """
         # iw - number of samples in window (int)
-        self.iw = int((20*60)/self.secs_between_obs)     # 20 min windows
+        self.iw = int((self.window)/self.secs_between_obs)     # 20 min windows
         # io - number of samples in overlapping section of window (int)
-        self.io = int(0.5 * self.iw)          # 10 min overlap
-        # number of windows in feature request
-        # Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
+        self.io = int(self.overlap * self.iw)          # 10 min overlap
+        # Length between data samples
         self.dt = timedelta(seconds=self.secs_between_obs)
         # print("IN:tf", tf, type(tf))
         # print("IN:ti", ti, type(ti))
+        # number of windows in feature request
+        # Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
         Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
 
         # dto - length of non-overlapping section of window (timedelta)
-        self.dto = 0.5 * self.dtw
+        self.dto = self.overlap * self.dtw
 
         # features to compute
         cfp = ComprehensiveFCParameters()
@@ -366,7 +371,6 @@ class TremorData(object):
         # TODO make secs_between_obs a parameter for the constructor?? And then turn use_raw into use_features_as_data?
         # parallel data collection - creates temporary files in ./_tmp
         if self.use_raw:
-            self.secs_between_obs = 5
             pars = [[i,ti,self.secs_between_obs] for i in range(ndays)]
         else:
             pars = [[i,ti] for i in range(ndays)]
