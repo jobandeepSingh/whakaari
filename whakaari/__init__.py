@@ -442,7 +442,7 @@ class TremorData(object):
             for i in range(1,int(np.floor(self.df.shape[0]/(24*6)))): 
                 ind = i*24*6
                 self.df['dsar'][ind] = 0.5*(self.df['dsar'][ind-1]+self.df['dsar'][ind+1])
-                self.df.to_csv(self.file, index=True)
+            self.df.to_csv(self.file, index=True)
 
         # update the column names if using 
 
