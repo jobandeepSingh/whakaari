@@ -300,7 +300,7 @@ class TremorData(object):
             fm = extract_features(df, column_id='id', n_jobs=self.n_jobs, default_fc_parameters=cfp, impute_function=impute)
             fm.index = pd.Series(wd)
             fm.to_csv(self.file, index=True, index_label='time')
-            
+        
         return fm
     def _construct_windows(self, Nw, ti, i0=0, i1=None):
         """ Create overlapping data windows for feature extraction.
@@ -444,7 +444,15 @@ class TremorData(object):
                 self.df['dsar'][ind] = 0.5*(self.df['dsar'][ind-1]+self.df['dsar'][ind+1])
             self.df.to_csv(self.file, index=True)
 
-        # update the column names if using 
+        # update the column names if using features as raw data
+        if self.use_raw:
+            with open(self.file, "r") as f:
+                lines = f.readlines()
+            # replacing all underscores from the column names as 
+            # these are used for splitting later in pipeline
+            lines[0] = lines[0].replace("_","-")
+            with open(self.file, "w") as f:
+                f.write(''.join(lines))
 
         self.ti = self.df.index[0]
         self.tf = self.df.index[-1]
