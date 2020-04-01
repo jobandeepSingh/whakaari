@@ -242,7 +242,7 @@ class TremorData(object):
         Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
 
         # dto - length of non-overlapping section of window (timedelta)
-        self.dto = self.overlap * self.dtw
+        self.dto = (1-self.overlap) * self.dtw
 
         # features to compute
         cfp = ComprehensiveFCParameters()
