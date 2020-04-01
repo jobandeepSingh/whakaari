@@ -85,14 +85,14 @@ class TremorData(object):
         plot
             Plot tremor data.
     """
-    def __init__(self, raw_data=False, n_jobs=6, secs_between_obs=5, feature_window_size=600, overlap=0.5):
-        self.use_raw = raw_data
-        if self.use_raw:
+    def __init__(self, use_features_as_data=False, n_jobs=6, secs_between_obs=5, feature_window_size=600, overlap=0.5):
+        self.use_features_as_data = use_features_as_data
+        if self.use_features_as_data:
             self.secs_between_obs = secs_between_obs
             self.window = feature_window_size
             self.overlap = overlap
         self.n_jobs = n_jobs
-        if self.use_raw:
+        if self.use_features_as_data:
             self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','features_tremor_data.dat'])
             self.raw_file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','raw_tremor_data.dat'])
         else:
@@ -366,11 +366,11 @@ class TremorData(object):
 
         ndays = (tf-ti).days
 
-        # TODO test speed for different parallel configs for the use_raw (Maybe get data for less than a day at a time?)
+        # TODO test speed for different parallel configs for the use_features_as_data (Maybe get data for less than a day at a time?)
         # TODO maybe do raw data one step transform another step?
-        # TODO make secs_between_obs a parameter for the constructor?? And then turn use_raw into use_features_as_data?
+        # TODO make secs_between_obs a parameter for the constructor?? And then turn use_features_as_data into use_features_as_data?
         # parallel data collection - creates temporary files in ./_tmp
-        if self.use_raw:
+        if self.use_features_as_data:
             pars = [[i,ti,self.secs_between_obs] for i in range(ndays)]
         else:
             pars = [[i,ti] for i in range(ndays)]
@@ -389,7 +389,7 @@ class TremorData(object):
         # TODO IMPORTANT! EXTRACT FEATURES FROM TEMP FILES INSTEAD????
         # special case of no file to update - create new file
         if not self.exists:
-            if self.use_raw:
+            if self.use_features_as_data:
                 ti=datetime(ti.year,ti.month,ti.day,ti.hour,ti.minute,ti.second)
                 tf=datetime(tf.year,tf.month,tf.day,tf.hour,tf.minute,tf.second)
                 shutil.copyfile('_tmp/_tmp_fl_00000.dat',self.raw_file)
@@ -410,7 +410,7 @@ class TremorData(object):
 
         # read temporary files in as dataframes for concatenation with existing data
         # For this most of rest of this method use self.df as raw data, not features
-        if self.use_raw:
+        if self.use_features_as_data:
             self.df = pd.read_csv(self.raw_file, index_col=0, parse_dates=[0,], infer_datetime_format=True)
             # gc.collect()
         dfs = [self.df[datas]]
@@ -425,7 +425,7 @@ class TremorData(object):
         # impute missing data using linear interpolation and save file
         # QUESTION why is this only called when updating but not self.exists
         self.df = self.df.loc[~self.df.index.duplicated(keep='last')]
-        if self.use_raw:
+        if self.use_features_as_data:
             self.df = self.df.resample(str(self.secs_between_obs)+'S').interpolate('linear')
             ti=datetime(ti.year,ti.month,ti.day,ti.hour,ti.minute,ti.second)
             tf=datetime(tf.year,tf.month,tf.day,tf.hour,tf.minute,tf.second)
@@ -665,13 +665,13 @@ class ForecastModel(object):
             Corner plot of feature correlation.
     """
     # QUESTION what is the use of self.ti_model and self.tf_model except for default values when training?
-    def __init__(self, window, overlap, look_forward, ti=None, tf=None, data_streams=['rsam','mf','hf','dsar'], root=None, raw_data=False, n_jobs=6):
-        self.use_raw = raw_data
+    def __init__(self, window, overlap, look_forward, ti=None, tf=None, data_streams=['rsam','mf','hf','dsar'], root=None, use_features_as_data=False, n_jobs=6):
+        self.use_features_as_data = use_features_as_data
         self.window = window
         self.overlap = overlap
         self.look_forward = look_forward
         self.data_streams = data_streams
-        self.data = TremorData(raw_data=self.use_raw, n_jobs=n_jobs)
+        self.data = TremorData(use_features_as_data=self.use_features_as_data, n_jobs=n_jobs)
         
         # Transforms are not used
         # if any(['_' in ds for ds in data_streams]):
