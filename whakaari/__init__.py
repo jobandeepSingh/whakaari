@@ -89,8 +89,18 @@ class TremorData(object):
         self.use_features_as_data = use_features_as_data
         if self.use_features_as_data:
             self.secs_between_obs = secs_between_obs
-            self.window = feature_window_size
+            self.sec_per_window = feature_window_size
             self.overlap = overlap
+            self.dtw = timedelta(seconds = feature_window_size)
+            # iw - number of samples in window (int)
+            self.iw = int((self.sec_per_window)/self.secs_between_obs)
+            # io - number of samples in overlapping section of window (int)
+            self.io = int(self.overlap * self.iw)
+            # Length between data samples
+            self.dt = timedelta(seconds=self.secs_between_obs)
+            # dto - length of non-overlapping section of window (timedelta)
+            self.dto = (1-self.overlap) * self.dtw
+
         self.n_jobs = n_jobs
         if self.use_features_as_data:
             self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2]+['data','features_tremor_data.dat'])
@@ -197,8 +207,6 @@ class TremorData(object):
         except FileNotFoundError:
             pass
 
-        self.dtw = timedelta(minutes = 20)
-
         # divide training period into years
         # TODO need to make this much smaller than years for realtime data looking at only a 3 weeks worth of data
         ts = [datetime(yr, 1, 1, 0, 0, 0) for yr in list(range(ti.year+1, tf.year+1))]
@@ -229,20 +237,8 @@ class TremorData(object):
             ys : pandas.Dataframe
                 Label vector corresponding to data windows
         """
-        # iw - number of samples in window (int)
-        self.iw = int((self.window)/self.secs_between_obs)     # 20 min windows
-        # io - number of samples in overlapping section of window (int)
-        self.io = int(self.overlap * self.iw)          # 10 min overlap
-        # Length between data samples
-        self.dt = timedelta(seconds=self.secs_between_obs)
-        # print("IN:tf", tf, type(tf))
-        # print("IN:ti", ti, type(ti))
         # number of windows in feature request
-        # Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
         Nw = int(np.floor(((tf-ti)/self.dt)/(self.iw-self.io)))
-
-        # dto - length of non-overlapping section of window (timedelta)
-        self.dto = (1-self.overlap) * self.dtw
 
         # features to compute
         cfp = ComprehensiveFCParameters()
