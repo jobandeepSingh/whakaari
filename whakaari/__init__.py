@@ -437,7 +437,7 @@ class TremorData(object):
             self.df.to_csv(self.file, index=True)
 
         # update the column names if using features as raw data
-        if self.use_raw:
+        if self.use_features_as_data:
             with open(self.file, "r") as f:
                 lines = f.readlines()
             # replacing all underscores from the column names as 
