@@ -380,12 +380,6 @@ class TremorData(object):
         p.close()
         p.join()
 
-        def get_raw_features():
-            # Get features for 20 min windows (with 10 min overlap)
-            print("starting feature extraction for data")
-            fm = self._load_data(ti, tf)
-            return fm
-
         # TODO IMPORTANT! EXTRACT FEATURES FROM TEMP FILES INSTEAD????
         # special case of no file to update - create new file
         if not self.exists:
@@ -396,7 +390,6 @@ class TremorData(object):
                 self.exists = True
                 shutil.rmtree('_tmp')
                 self.df = pd.read_csv(self.raw_file, index_col=0, parse_dates=[0,], infer_datetime_format=True)
-                #fm = get_raw_features()
                 print("starting feature extraction for data")
                 fm = self._load_data(ti, tf)
                 self.df = fm
@@ -430,7 +423,6 @@ class TremorData(object):
             ti=datetime(ti.year,ti.month,ti.day,ti.hour,ti.minute,ti.second)
             tf=datetime(tf.year,tf.month,tf.day,tf.hour,tf.minute,tf.second)
             self.df.to_csv(self.raw_file, index=True)
-            #fm = get_raw_features()
             print("starting feature extraction for data",ti,tf)
             fm = self._load_data(ti, tf)
             self.df = fm
