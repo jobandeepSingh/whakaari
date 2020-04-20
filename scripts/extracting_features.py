@@ -35,7 +35,7 @@ except:
 from tsfresh import extract_features, select_features
 from tsfresh.utilities.dataframe_functions import impute
 from tsfresh.transformers import FeatureSelector
-from tsfresh.feature_extraction.settings import ComprehensiveFCParameters
+from tsfresh.feature_extraction.settings import ComprehensiveFCParameters, MinimalFCParameters, EfficientFCParameters
 from imblearn.under_sampling import RandomUnderSampler
 
 # # classifier imports
@@ -137,7 +137,7 @@ def get_data_for_day(i,t0,secs_between_obs=1, root="default_data"):
 
     # write out file
     datas = np.array(datas)
-    time = [(ti+j*secs_per_win).datetime for j in range(datas.shape[1])]
+    time = [(ti+j*secs_between_obs).datetime for j in range(datas.shape[1])]
     df = pd.DataFrame(zip(*datas), columns=names, index=pd.Series(time))
     df.index.name = "DateTime"
     date_time = (t0+i*daysec)
@@ -193,7 +193,8 @@ def feature_extraction(df, root, window_overlap, obs_per_window, secs_between_ob
     # number of windows in feature request
     Nw = int(df.shape[0]/(iw-io))
     
-    cfp = ComprehensiveFCParameters()
+    cfp = MinimalFCParameters()
+    # cfp = ComprehensiveFCParameters()
     # if self.compute_only_features:
     #     cfp = dict([(k, cfp[k]) for k in cfp.keys() if k in self.compute_only_features])
     # else:
@@ -218,6 +219,8 @@ def feature_extraction(df, root, window_overlap, obs_per_window, secs_between_ob
     
     if os.path.isfile(file_path) and not recompute:
         fm = pq.read_pandas(file_path).to_pandas()
+        if source_win_overlap and source_obs_per_win:
+            fm = fm.transpose()
         return fm
     else:
         # create feature matrix from scratch   
@@ -234,10 +237,13 @@ def feature_extraction(df, root, window_overlap, obs_per_window, secs_between_ob
         # Get rid of 'if' if it doesn't take too long
         if not (source_win_overlap and source_obs_per_win):
             fm.columns = [name.replace("_", "-") for name in fm.columns]
+            table = pa.Table.from_pandas(fm)
+            pq.write_table(table, file_path)
         else:
             fm = fm.transpose()
-        table = pa.Table.from_pandas(fm)
-        pq.write_table(table, file_path)
+            table = pa.Table.from_pandas(fm)
+            pq.write_table(table, file_path)
+            fm = fm.transpose()
 
     return fm
 
@@ -277,27 +283,28 @@ def construct_windows(df, Nw, iw, io, dto):
     return df, window_dates
 
 
-def feature_selection(df, days_ahead=1, n_jobs=4):
+def feature_selection(root, df, days_ahead=1, n_jobs=4):
     with open('data/eruptive_periods.txt','r') as fp:
         tes = [datetimeify(ln.rstrip()) for ln in fp.readlines()]
 
     def temp(from_time):
         for te in tes:
-            if 0 < (te-from_time).total_seconds()/(3600*24) < days:
-                    return 1.
-            return 0.
+            if 0 < (te-from_time).total_seconds()/(3600*24) < days_ahead:
+                return 1
+        return 0
 
     krakatoa = pd.Series(list(map(temp, df.index)), index=df.index)
     # krakatoa = pd.Series(np.array([0]*16 + [1]*16), index=fm.index)
 
     select = FeatureSelector(n_jobs=n_jobs, ml_task='classification')
-    select.fit_transform(df,krakatoa)
+    select.fit_transform(df, krakatoa)
     print('Finish select features')
 
     Nfts = 100
     fts = select.features[:Nfts]
     pvs = select.p_values[:Nfts]
-    with open('davids_features.txt','w') as fp:
+    date_time = df.index[0]
+    with open(f"{root}/{df.index[0].date()}_{df.index[-1].date()}_davids_features.txt",'w') as fp:
         fp.write('features p_values\n')
         for f,pv in zip(fts,pvs): 
             fp.write('{:4.3e} {:s}\n'.format(pv, f))
@@ -305,7 +312,7 @@ def feature_selection(df, days_ahead=1, n_jobs=4):
 
     fts = select.relevant_features[:Nfts]
     pvs = select.feature_importances_[:Nfts]
-    with open('relevant_features.txt','w') as fp:
+    with open(f"{root}/{df.index[0].date()}_{df.index[-1].date()}_relevant_features.txt",'w') as fp:
         fp.write('relevant_features feature_importances_\n')
         for f,pv in zip(fts,pvs): 
             fp.write('{:4.3e} {:s}\n'.format(pv, f))
@@ -341,11 +348,17 @@ def datetimeify(t):
 
 
 if __name__ == "__main__":
-    days = [datetime(2011,1,2), datetime(2012,7,5), datetime(2020,4,18)]
-    # get_data('Testing', days, n_jobs=4)
-    raw_data_list = read_dfs('Testing', days)
-    source_df = feature_extraction(raw_data_list[0], 'Testing', 0.5, 20, 1, 4)
-    meta_df = feature_extraction(source_df, 'Testing', 0.5, 120, 20, 4, source_win_overlap=0.5, source_obs_per_win=20, source_secs_between_obs=1)
+    days = [datetime(2011,1,2), datetime(2012,7,5), datetime(2020,4,18), datetime(2019,12,8)]
+    # get_data('Small', days, n_jobs=4)
+    raw_data_list = read_dfs('Small', days)
+    source_df = feature_extraction(raw_data_list[1], 'Small', 0.5, 20, 1, 4)
+    meta_df = feature_extraction(source_df, 'Small', 0.5, 120, 10, 4, source_win_overlap=0.5, source_obs_per_win=20, source_secs_between_obs=1)
+
+    source_df1 = feature_extraction(raw_data_list[3], 'Small', 0.5, 20, 1, 4)
+    meta_df1 = feature_extraction(source_df1, 'Small', 0.5, 120, 10, 4, source_win_overlap=0.5, source_obs_per_win=20, source_secs_between_obs=1)
+    
     print('starting feature selection')
-    feature_selection(meta_df, 1, 4)
+    new_df = pd.concat([meta_df,meta_df1])
+    feature_selection("Small",new_df, 1, 4)
+
     print('hello')
