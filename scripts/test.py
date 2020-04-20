@@ -5,7 +5,7 @@ from obspy import UTCDateTime
 from datetime import timedelta, datetime, date
 import pandas as pd
 from inspect import getfile, currentframe
-
+    
 # tsfresh and sklearn dump a lot of warnings - these are switched off below, but should be
 # switched back on when debugging
 import logging

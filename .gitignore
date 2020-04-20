@@ -7,4 +7,6 @@ plots/
 controller/
 _tmp/
 .vscode/
+IMPORTANT DATA/*
 *.png
+data/*

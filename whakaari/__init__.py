@@ -1261,6 +1261,8 @@ class ForecastModel(object):
         fM = fM.loc[inds]
         ys = ys['label'].loc[inds]
 
+        # QUESTION instead of using pool here to make this parallel would it be better have this 
+        #           running with standard map then use dask to parallelize within the train_one_model function?
         # set up model training
         if self.n_jobs > 1:
             p = Pool(self.n_jobs)
