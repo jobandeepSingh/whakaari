@@ -53,7 +53,7 @@ from imblearn.under_sampling import RandomUnderSampler
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-os.chdir('..')
+# os.chdir('..')
 
 makedir = lambda name: os.makedirs(name, exist_ok=True)
 
@@ -193,6 +193,7 @@ def feature_extraction(df, root, window_overlap, obs_per_window, secs_between_ob
     # number of windows in feature request
     Nw = int(df.shape[0]/(iw-io))
     
+    # cfp = EfficientFCParameters()
     cfp = MinimalFCParameters()
     # cfp = ComprehensiveFCParameters()
     # if self.compute_only_features:
@@ -237,12 +238,14 @@ def feature_extraction(df, root, window_overlap, obs_per_window, secs_between_ob
         # Get rid of 'if' if it doesn't take too long
         if not (source_win_overlap and source_obs_per_win):
             fm.columns = [name.replace("_", "-") for name in fm.columns]
-            table = pa.Table.from_pandas(fm)
-            pq.write_table(table, file_path)
+            # table = pa.Table.from_pandas(fm)
+            # pq.write_table(table, file_path)
+            save_file(fm, file_path)
         else:
             fm = fm.transpose()
-            table = pa.Table.from_pandas(fm)
-            pq.write_table(table, file_path)
+            # table = pa.Table.from_pandas(fm)
+            # pq.write_table(table, file_path)
+            save_file(fm, file_path)
             fm = fm.transpose()
 
     return fm
@@ -347,18 +350,35 @@ def datetimeify(t):
     raise ValueError("time data '{:s}' not a recognized format".format(t))
 
 
+def console_print(text):
+    print("=================================")
+    print(text)
+    print("=================================")
+
+
+def save_file(df, file_name, transpose=False, format='HDFS'):
+    # For HDF5 can use HDFStore instead to store multiple DF
+    df.to_hdf(file_name, key='df')
+
+
 if __name__ == "__main__":
-    days = [datetime(2011,1,2), datetime(2012,7,5), datetime(2020,4,18), datetime(2019,12,8)]
-    # get_data('Small', days, n_jobs=4)
-    raw_data_list = read_dfs('Small', days)
-    source_df = feature_extraction(raw_data_list[1], 'Small', 0.5, 20, 1, 4)
-    meta_df = feature_extraction(source_df, 'Small', 0.5, 120, 10, 4, source_win_overlap=0.5, source_obs_per_win=20, source_secs_between_obs=1)
+    n_jobs = 4
+    days = [datetime(2011,1,2), datetime(2012,7,5), datetime(2020,4,10), datetime(2019,12,8)]
 
-    source_df1 = feature_extraction(raw_data_list[3], 'Small', 0.5, 20, 1, 4)
-    meta_df1 = feature_extraction(source_df1, 'Small', 0.5, 120, 10, 4, source_win_overlap=0.5, source_obs_per_win=20, source_secs_between_obs=1)
-    
-    print('starting feature selection')
-    new_df = pd.concat([meta_df,meta_df1])
-    feature_selection("Small",new_df, 1, 4)
+    console_print("Getting raw data")
+    get_data('Efficient', days, n_jobs)
+    raw_data_list = read_dfs('Efficient', days)
 
-    print('hello')
+    console_print("Extracting first set of features")
+    source_df = feature_extraction(raw_data_list[1], 'Efficient', 0.5, 20, 1, n_jobs)
+    meta_df = feature_extraction(source_df, 'Efficient', 0.5, 120, 10, n_jobs, source_win_overlap=0.5, source_obs_per_win=20, source_secs_between_obs=1)
+
+    # console_print("Extracting second set of features")
+    # source_df1 = feature_extraction(raw_data_list[3], 'Efficient', 0.5, 20, 1, n_jobs)
+    # meta_df1 = feature_extraction(source_df1, 'Efficient', 0.5, 120, 10, 4n_jobs, source_win_overlap=0.5, source_obs_per_win=20, source_secs_between_obs=1)
+    # new_df = pd.concat([meta_df,meta_df1])
+
+    # console_print('starting feature selection')
+    # feature_selection("Efficient",new_df, 1, n_jobs)
+
+    console_print('hello')
