@@ -55,7 +55,6 @@ from imblearn.under_sampling import RandomUnderSampler
 # import pyarrow as pa
 # import pyarrow.parquet as pq
 
-# os.chdir('..')
 
 makedir = lambda name: os.makedirs(name, exist_ok=True)
 
@@ -371,6 +370,7 @@ def console_print(text):
 
 
 if __name__ == "__main__":
+    os.chdir('..')
     n_jobs = 4
     days = [datetime(2011,1,2), datetime(2012,7,5), datetime(2020,4,10), datetime(2019,12,8)]
 
