@@ -202,8 +202,8 @@ def feature_extraction(df, store, window_overlap, obs_per_window, secs_between_o
     # number of windows in feature request
     Nw = int(df.shape[0]/(iw-io))
     
-    # cfp = EfficientFCParameters()
-    cfp = MinimalFCParameters()
+    cfp = EfficientFCParameters()
+    # cfp = MinimalFCParameters()
     # cfp = ComprehensiveFCParameters()
     # if self.compute_only_features:
     #     cfp = dict([(k, cfp[k]) for k in cfp.keys() if k in self.compute_only_features])
@@ -371,25 +371,26 @@ def console_print(text):
 
 if __name__ == "__main__":
     os.chdir('..')
-    n_jobs = 4
-    days = [datetime(2011,1,2), datetime(2012,7,5), datetime(2020,4,10), datetime(2019,12,8)]
+    n_jobs = 6
+    days = [datetime(int(sys.argv[1]),int(sys.argv[2]),int(sys.argv[3]))]
+    # days = [datetime(2011,1,2), datetime(2012,7,5), datetime(2020,4,10), datetime(2019,12,8)]
 
-    store = 'dataset.h5'
+    store = f'dataset_test.h5'
 
     console_print("Getting raw data")
-    # get_data(store, days, n_jobs)
+    get_data(store, days, n_jobs)
     raw_data_list = read_dfs(store, days)
 
     console_print("Extracting first set of features")
-    source_df = feature_extraction(raw_data_list[1], store, 0.5, 20, 1, n_jobs)
+    source_df = feature_extraction(raw_data_list[0], store, 0.5, 20, 1, n_jobs)
     meta_df = feature_extraction(source_df, store, 0.5, 120, 10, n_jobs, source_win_overlap=0.5, source_obs_per_win=20, source_secs_between_obs=1)
 
-    console_print("Extracting second set of features")
-    source_df1 = feature_extraction(raw_data_list[3], store, 0.5, 20, 1, n_jobs)
-    meta_df1 = feature_extraction(source_df1, store, 0.5, 120, 10, n_jobs, source_win_overlap=0.5, source_obs_per_win=20, source_secs_between_obs=1)
-    new_df = pd.concat([meta_df,meta_df1])
+    # console_print("Extracting second set of features")
+    # source_df1 = feature_extraction(raw_data_list[3], store, 0.5, 20, 1, n_jobs)
+    # meta_df1 = feature_extraction(source_df1, store, 0.5, 120, 10, n_jobs, source_win_overlap=0.5, source_obs_per_win=20, source_secs_between_obs=1)
+    # new_df = pd.concat([meta_df,meta_df1])
 
-    console_print('starting feature selection')
-    feature_selection("Efficient",new_df, 1, n_jobs)
+    # console_print('starting feature selection')
+    # feature_selection("Efficient",new_df, 1, n_jobs)
 
-    console_print('hello')
+    # console_print('hello')
