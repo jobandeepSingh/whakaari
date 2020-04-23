@@ -7,10 +7,10 @@ from extracting_features_hdf5 import get_data, read_dfs, feature_extraction, con
 
 if __name__ == "__main__":
 
-    if os.path.isfile('D:\\0 2020 sem 1\\whakaari\\dataset_test.h5'):
-        os.remove('D:\\0 2020 sem 1\\whakaari\\dataset_test.h5')
+    if os.path.isfile('../dataset_test.h5'):
+        os.remove('../dataset_test.h5')
 
-    num_times = 2
+    num_times = 1
     n_jobs = 6
 
     # # timing the full process of:
@@ -25,16 +25,15 @@ if __name__ == "__main__":
     #     os.system("python extracting_features_hdf5.py 2012 5 18")
     #     end = time()
     #     print()
-    #     os.remove('D:\\0 2020 sem 1\\whakaari\\dataset_test.h5')
+    #     os.remove('../dataset_test.h5')
     #     times_full.append(end-start)
     
-    # with open(f'D:\\0 2020 sem 1\\whakaari\\times_full_{num_times}.txt', 'w') as f:
+    # with open(f'../times_full_{num_times}.txt', 'w') as f:
     #     for i in times_full:
     #         f.write(f"{i}\n")
 
-    os.chdir('D:\\0 2020 sem 1\\whakaari')
+    os.chdir('..')
 
-    
     # # timing of:
     # #   - downloading data for 1 day
     # console_print("Starting Timing Data Download")
@@ -47,10 +46,10 @@ if __name__ == "__main__":
     #     raw_data_list = read_dfs(store, days)
 
     #     end = time()
-    #     os.remove(f'D:\\0 2020 sem 1\\whakaari\\{store}')
+    #     os.remove(f'{store}')
     #     times_dowload.append(end-start)
     
-    # with open(f'D:\\0 2020 sem 1\\whakaari\\times_dowload_{num_times}.txt', 'w') as f:
+    # with open(f'times_dowload_{num_times}.txt', 'w') as f:
     #     for i in times_dowload:
     #         f.write(f"{i}\n")
 
@@ -60,8 +59,8 @@ if __name__ == "__main__":
     #   - extracting meta features
     console_print("Starting Timing Feature Extraction")
     times_features = []
-    src = 'D:\\0 2020 sem 1\\whakaari\\dataset_test_sample.h5'
-    dst = 'D:\\0 2020 sem 1\\whakaari\\dataset_test.h5'
+    src = 'dataset_test_sample.h5'
+    dst = 'dataset_test.h5'
     store = 'dataset_test.h5'    
     days = [datetime(2011,1,2), datetime(2012,7,5), datetime(2020,4,10), datetime(2019,12,8)]
     data_list = read_dfs(src, days)
@@ -75,11 +74,11 @@ if __name__ == "__main__":
         os.remove(dst) # delete hdf file created
         times_features.append(end-start)
     
-    with open(f'D:\\0 2020 sem 1\\whakaari\\times_features_{num_times}.txt', 'w') as f:
+    with open(f'times_features_{num_times}.txt', 'w') as f:
         for i in times_features:
             f.write(f"{i}\n")
     
-    with open(f'D:\\0 2020 sem 1\\whakaari\\times_averages_{num_times}.txt', 'w') as f:
+    with open(f'times_averages_{num_times}.txt', 'w') as f:
         # f.write(f"Full run average: {sum(times_full)/len(times_full)}\n")
         # f.write(f"Download average: {sum(times_dowload)/len(times_dowload)}\n")
         f.write(f"Feature Extration average: {sum(times_features)/len(times_features)}\n")
