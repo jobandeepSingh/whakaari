@@ -10,11 +10,14 @@ from scipy.integrate import cumtrapz
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from typing import List
 import tables
+import statistics
 
 # ignoring warnings related to naming convention of hdf5
 warnings.simplefilter('ignore', tables.NaturalNameWarning)
+
 # ObsPy imports
 try:
     from obspy.clients.fdsn import Client as FDSNClient
@@ -36,8 +39,9 @@ MONTH = timedelta(days=365.25 / 12)
 _DAY = timedelta(days=1.)
 DEFAULT_SECS_BETWEEN_OBS = 1
 
-makedir = lambda name: os.makedirs(name, exist_ok=True)
 
+def makedir(name: str):
+    os.makedirs(name, exist_ok=True)
 
 # class FilePath(object):
 #     def __init__(self, date_time: datetime, secs_between_obs: int):
@@ -89,7 +93,6 @@ def get_data_for_day(t0: datetime, store: str, i: int = 0, secs_between_obs: int
         WIZ = client.get_waveforms('NZ', 'WIZ', "10", "HHZ", t0 + i * daysec, t0 + (i + 1) * daysec)
 
         # if less than 1 day of data, try different client
-        # QUESTION why less than 600*100
         if len(WIZ.traces[0].data) < 600 * 100:
             raise FDSNNoDataException('')
     except ObsPyMSEEDFilesizeTooSmallError:
@@ -133,13 +136,22 @@ def get_data_for_day(t0: datetime, store: str, i: int = 0, secs_between_obs: int
     datas.append(dsar)
     names.append('dsar')
 
-    # write out file
     datas = np.array(datas)
     time = [(ti + j * secs_between_obs).datetime for j in range(datas.shape[1])]
     df = pd.DataFrame(zip(*datas), columns=names, index=pd.Series(time))
     df.index.name = "DateTime"
     df = df[df.index.day == (t0.day + i)]  # Get rid of rows that aren't actually this day
 
+    # QUESTION do we need to remove duplicates if we already trim data to only that day?
+    # remove duplicate indicies (LEGACY code from David)
+    df = df.loc[~df.index.duplicated(keep='last')]
+
+    # remove artefact in computing dsar
+    median_dsar = statistics.median(df['dsar'])
+    for i in range(5):  # only show up in first 5 seconds of data
+        df['dsar'][i] = median_dsar
+
+    # write out file
     store = pd.HDFStore(store)
     store.put(fp, df)
     store.close()
@@ -223,6 +235,7 @@ def read_data(store_path: str, days: List[datetime], secs_between_obs=DEFAULT_SE
     for i in range(len(days)):
         fp = f"/Year_{days[i].year}/Month_{days[i].month}/Day_{days[i].day}_secs-between-obs={secs_between_obs}"
         data[i] = store[fp]
+    store.close()
     return data
 
 
@@ -279,19 +292,18 @@ def construct_windows(df, Nw, iw, io, dto):
     return df, window_dates
 
 
-if __name__ == "__main__":
-    # # ===== USING THE TREMOR DATA CLASS =======
-    # t = TremorData()
-    # look_forward = 2.
-    # delta = timedelta(days=look_forward)
-    # for eruption in t.tes:
-    #     t.update(ti=eruption-delta, tf=eruption) # does linear interpolation which is not needed
-    #     print(f"updated: {eruption-delta} to {eruption}")
+def create_plots_regression():
+    """
+    Creates the plot for each eruption showing:
+        - binary target vector
+        - continuous regression target vector
+        - eruption date
+        - rsam signal
 
-    os.chdir('..')  # set working directory to root
+    :return: None
+    """
 
     raw_data_store = 'data\\raw_data.h5'
-    # put feature h5 file in forecaster class
 
     # get eruption dates
     eruptions = get_eruptions()
@@ -307,7 +319,7 @@ if __name__ == "__main__":
     # bin_res = construct_binary_response(raw_data_df)
 
     # parameters for windows
-    iw = 60 * 20  # observations per window # 60 obs per min * 20 mins
+    iw = 60 * 20  # observations per window : 60 obs per min * 20 mins
     overlap = 0.5  # overlap percentage
     io = int(iw * overlap)  # observations in overlapping part of window
     # length of non-overlapping section of window
@@ -368,9 +380,33 @@ if __name__ == "__main__":
             plt.plot(section.index, bin_res, c='g')
 
         # plot vertical line for eruption
-        plt.axvline(x=eruptions[i])
+        plt.axvline(x=eruptions[i], color='b')
         # add title
         plt.title(f"Eruption: {eruptions[i]}")
-
+        # legend
+        lines = [Line2D([0], [0], color='k', label='rsam'),
+                 Line2D([0], [0], color='g', label='binary target vector'),
+                 Line2D([0], [0], color='r', label='regression target vector'),
+                 Line2D([0], [0], color='b', label='eruption')]
+        plt.legend(handles=lines, loc='lower left')
         fig.tight_layout()
         plt.show()
+
+
+if __name__ == "__main__":
+    # # ===== USING THE TREMOR DATA CLASS =======
+    # t = TremorData()
+    # look_forward = 2.
+    # delta = timedelta(days=look_forward)
+    # for eruption in t.tes:
+    #     t.update(ti=eruption-delta, tf=eruption) # does linear interpolation which is not needed
+    #     print(f"updated: {eruption-delta} to {eruption}")
+
+    os.chdir('..')  # set working directory to root
+
+    # put feature h5 file in forecaster class
+    create_plots_regression()
+
+
+
+
