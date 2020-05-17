@@ -10,14 +10,11 @@ from scipy.integrate import cumtrapz
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
+from typing import List
 import tables
 
 # ignoring warnings related to naming convention of hdf5
 warnings.simplefilter('ignore', tables.NaturalNameWarning)
-
-from typing import List
-
 # ObsPy imports
 try:
     from obspy.clients.fdsn import Client as FDSNClient
@@ -33,13 +30,19 @@ try:
 except:
     failedobspyimport = True
 
-makedir = lambda name: os.makedirs(name, exist_ok=True)
+datas = ['rsam', 'mf', 'hf', 'dsar']
+all_classifiers = ["SVM", "KNN", 'DT', 'RF', 'NN', 'NB', 'LR']
+MONTH = timedelta(days=365.25 / 12)
+_DAY = timedelta(days=1.)
 DEFAULT_SECS_BETWEEN_OBS = 1
 
+makedir = lambda name: os.makedirs(name, exist_ok=True)
 
-# class file_path(object):
+
+# class FilePath(object):
 #     def __init__(self, date_time: datetime, secs_between_obs: int):
-#         self.path = f"/Year_{date_time.year}/Month_{date_time.month}/Day_{date_time.day}_secs-between-obs={secs_between_obs}"
+#         self.path = \
+#             f"/Year_{date_time.year}/Month_{date_time.month}/Day_{date_time.day}_secs-between-obs={secs_between_obs}"
 
 
 def get_data_for_day(t0: datetime, store: str, i: int = 0, secs_between_obs: int = DEFAULT_SECS_BETWEEN_OBS):
@@ -204,14 +207,14 @@ def datetimeify(t):
     raise ValueError("time data '{:s}' not a recognized format".format(t))
 
 
-def days_around_eruption(eruptions: List[datetime], days_either_side: int) -> List[datetime]:
+def get_days_either_side(days: List[datetime], days_either_side: int) -> List[datetime]:
     delta = timedelta(days=days_either_side)
-    days = []
-    for eruption in eruptions:
-        eruption_day = datetime(eruption.year, eruption.month, eruption.day)
+    all_days = []
+    for day in days:
+        eruption_day = datetime(day.year, day.month, day.day)
         for i in range(days_either_side * 2 + 1):
-            days.append(eruption_day - delta + timedelta(days=i))
-    return days
+            all_days.append(eruption_day - delta + timedelta(days=i))
+    return all_days
 
 
 def read_data(store_path: str, days: List[datetime], secs_between_obs=DEFAULT_SECS_BETWEEN_OBS) -> List[pd.DataFrame]:
@@ -225,12 +228,19 @@ def read_data(store_path: str, days: List[datetime], secs_between_obs=DEFAULT_SE
 
 def construct_binary_response(data: pd.DataFrame, days_forward: float = 2.) -> List[float]:
     eruptions = get_eruptions()
-    return [classify(date, eruptions, days_forward) for date in data.index]
+    return [classify_before(date, eruptions, days_forward) for date in data.index]
 
 
-def classify(from_time: datetime, eruptions: List[datetime], days_forward: float = 2.) -> float:
+def classify_before(from_time: datetime, eruptions: List[datetime], days_forward: float = 2.) -> float:
     for eruption in eruptions:
         if 0 < (eruption - from_time).total_seconds() / (3600 * 24) < days_forward:
+            return 1.
+    return 0.
+
+
+def classify(from_time: datetime, eruptions: List[datetime], days: float = 2.) -> float:
+    for eruption in eruptions:
+        if abs((eruption - from_time).total_seconds() / (3600 * 24)) < days:
             return 1.
     return 0.
 
@@ -258,15 +268,14 @@ def construct_windows(df, Nw, iw, io, dto):
     """
     ti = df.index[0]
     dfs = []
-    window_dates = []
-    diff = df.index[1] - df.index[0]
+    window_dates = [None] * Nw
+
     for i in range(Nw):
         dfi = df[:].iloc[i * (iw - io):i * (iw - io) + iw]
         dfi['id'] = i + 1
         dfs.append(dfi)
-        window_dates.append(ti + i * dto)
+        window_dates[i] = ti + i * dto
     df = pd.concat(dfs)
-    # window_dates = [ti + i*self.dto for i in range(Nw)]
     return df, window_dates
 
 
@@ -282,11 +291,12 @@ if __name__ == "__main__":
     os.chdir('..')  # set working directory to root
 
     raw_data_store = 'data\\raw_data.h5'
+    # put feature h5 file in forecaster class
 
     # get eruption dates
     eruptions = get_eruptions()
     # get list of days around eruptions
-    days = days_around_eruption(eruptions, 2)
+    days = get_days_either_side(eruptions, 2)
     # get data for the days around eruptions
     get_data_for_days(days, raw_data_store)
 
@@ -336,7 +346,8 @@ if __name__ == "__main__":
             # taking every 600th point so essentially plotting every 10min data
             section = raw_data[j][::600].loc[:, 'rsam']
             ax1.plot(section.index.values, section.values, c=color)
-
+        _, ymax = ax1.get_ylim()
+        ax1.set_ylim(bottom=-1. * ymax)  # hacky way to get the y-axis to line up at 0
         ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
 
         old_color = color
@@ -363,5 +374,3 @@ if __name__ == "__main__":
 
         fig.tight_layout()
         plt.show()
-
-    print("hello")
