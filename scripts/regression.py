@@ -13,7 +13,8 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from typing import List
 import tables
-import statistics
+from statistics import median
+from scripts.TremorData import DEFAULT_SECS_BETWEEN_OBS, get_data_for_days, datetimeify, TremorData
 
 # ignoring warnings related to naming convention of hdf5
 warnings.simplefilter('ignore', tables.NaturalNameWarning)
@@ -33,190 +34,11 @@ try:
 except:
     failedobspyimport = True
 
-datas = ['rsam', 'mf', 'hf', 'dsar']
-all_classifiers = ["SVM", "KNN", 'DT', 'RF', 'NN', 'NB', 'LR']
-MONTH = timedelta(days=365.25 / 12)
-_DAY = timedelta(days=1.)
-DEFAULT_SECS_BETWEEN_OBS = 1
-
-
-def makedir(name: str):
-    os.makedirs(name, exist_ok=True)
-
-# class FilePath(object):
-#     def __init__(self, date_time: datetime, secs_between_obs: int):
-#         self.path = \
-#             f"/Year_{date_time.year}/Month_{date_time.month}/Day_{date_time.day}_secs-between-obs={secs_between_obs}"
-
-
-def get_data_for_day(t0: datetime, store: str, i: int = 0, secs_between_obs: int = DEFAULT_SECS_BETWEEN_OBS):
-    """
-    Download WIZ data for given 24 hour period, writing data to temporary file.
-
-    :param datetime t0: Initial date of data download period.
-    :param str store: Name of hdf5 file to store the raw data.
-    :param int i: Number of days that 24 hour download period is offset from initial date.
-    :param int secs_between_obs: Desired seconds between observations.
-    :return: None
-    """
-    if failedobspyimport:
-        raise ImportError('ObsPy import failed, cannot update data.')
-
-    t0 = UTCDateTime(t0)
-    daysec = 24 * 3600
-    date_time = (t0 + i * daysec)
-
-    # check if data already in store
-    fp = f"/Year_{date_time.year}/Month_{date_time.month}/Day_{date_time.day}_secs-between-obs={secs_between_obs}"
-    store = pd.HDFStore(store)
-    if fp in store:
-        store.close()
-        return
-    store.close()
-
-    # open clients
-    client = FDSNClient("GEONET")
-    client_nrt = FDSNClient('https://service-nrt.geonet.org.nz')
-
-    data_streams = [[2, 5], [4.5, 8], [8, 16]]
-    names = ['rsam', 'mf', 'hf']
-
-    # download data
-    datas = []
-    try:
-        site = client.get_stations(starttime=t0 + i * daysec, endtime=t0 + (i + 1) * daysec, station='WIZ',
-                                   level="response", channel="HHZ")
-    except FDSNNoDataException:
-        pass
-
-    try:
-        WIZ = client.get_waveforms('NZ', 'WIZ', "10", "HHZ", t0 + i * daysec, t0 + (i + 1) * daysec)
-
-        # if less than 1 day of data, try different client
-        if len(WIZ.traces[0].data) < 600 * 100:
-            raise FDSNNoDataException('')
-    except ObsPyMSEEDFilesizeTooSmallError:
-        return
-    except FDSNNoDataException:
-        try:
-
-            WIZ = client_nrt.get_waveforms('NZ', 'WIZ', "10", "HHZ", t0 + i * daysec, t0 + (i + 1) * daysec)
-        except FDSNNoDataException:
-            return
-
-    # process frequency bands
-    WIZ.remove_sensitivity(inventory=site)
-    data = WIZ.traces[0].data
-    ti = WIZ.traces[0].meta['starttime']
-    # round start time to start of day
-    tiday = UTCDateTime("{:d}-{:02d}-{:02d} 00:00:00".format(ti.year, ti.month, ti.day))
-
-    ti = tiday + int(np.round((ti - tiday) / secs_between_obs)) * secs_between_obs
-    N = secs_between_obs * 100  # numbers of observations per window in data
-    Nm = int(N * np.floor(len(data) / N))
-    for data_stream, name in zip(data_streams, names):
-        filtered_data = bandpass(data, data_stream[0], data_stream[1], 100)
-        filtered_data = abs(filtered_data[:Nm])
-        datas.append(filtered_data.reshape(-1, N).mean(axis=-1) * 1.e9)
-
-    # QUESTION Does integration and bandpass order matter? Paper says other way around
-    # Would save a lot of below computations if other way around maybe?
-    # compute dsar
-    data = cumtrapz(data, dx=1. / 100, initial=0)
-    data -= np.mean(data)
-    j = names.index('mf')
-    mfd = bandpass(data, data_streams[j][0], data_streams[j][1], 100)
-    mfd = abs(mfd[:Nm])
-    mfd = mfd.reshape(-1, N).mean(axis=-1)
-    j = names.index('hf')
-    hfd = bandpass(data, data_streams[j][0], data_streams[j][1], 100)
-    hfd = abs(hfd[:Nm])
-    hfd = hfd.reshape(-1, N).mean(axis=-1)
-    dsar = mfd / hfd
-    datas.append(dsar)
-    names.append('dsar')
-
-    datas = np.array(datas)
-    time = [(ti + j * secs_between_obs).datetime for j in range(datas.shape[1])]
-    df = pd.DataFrame(zip(*datas), columns=names, index=pd.Series(time))
-    df.index.name = "DateTime"
-    df = df[df.index.day == (t0.day + i)]  # Get rid of rows that aren't actually this day
-
-    # QUESTION do we need to remove duplicates if we already trim data to only that day?
-    # remove duplicate indicies (LEGACY code from David)
-    df = df.loc[~df.index.duplicated(keep='last')]
-
-    # remove artefact in computing dsar
-    median_dsar = statistics.median(df['dsar'])
-    for i in range(5):  # only show up in first 5 seconds of data
-        df['dsar'][i] = median_dsar
-
-    # write out file
-    store = pd.HDFStore(store)
-    store.put(fp, df)
-    store.close()
-
-
-def get_data_between(ti: datetime, tf: datetime, store: str, secs_between_obs: int = None, n_jobs: int = 6) -> None:
-    ti = datetimeify(ti)
-    tf = datetimeify(tf)
-    n_days = (tf - ti).days + 1
-
-    # parallel data collection
-    pars = [[ti, store, i] for i in range(n_days)]
-    if secs_between_obs:  # add secs_between_obs if given
-        for p in pars: p.append(secs_between_obs)
-
-    p = Pool(n_jobs)
-    p.starmap(get_data_for_day, pars)
-    p.close()
-    p.join()
-
-
-def get_data_for_days(days: List[datetime], store: str, secs_between_obs: int = None, n_jobs: int = 6) -> None:
-    # parallel data collection
-    pars = [[day, store] for day in days]
-    if secs_between_obs:  # add secs_between_obs if given
-        for p in pars: p.append(secs_between_obs)
-
-    p = Pool(n_jobs)
-    p.starmap(get_data_for_day, pars)
-    p.close()
-    p.join()
-
 
 def get_eruptions() -> List[datetime]:
     with open('data/eruptive_periods.txt', 'r') as fp:
         eruptions = [datetimeify(ln.rstrip()) for ln in fp.readlines()]
     return eruptions
-
-
-def datetimeify(t):
-    """ Return datetime object corresponding to input string.
-
-        Parameters:
-        -----------
-        t : str, datetime.datetime
-            Date string to convert to datetime object.
-
-        Returns:
-        --------
-        datetime : datetime.datetime
-            Datetime object corresponding to input string.
-
-        Notes:
-        ------
-        This function tries several datetime string formats, and raises a ValueError if none work.
-    """
-    if type(t) in [datetime, Timestamp]:
-        return t
-    fmts = ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%Y %m %d %H %M %S', ]
-    for fmt in fmts:
-        try:
-            return datetime.strptime(t, fmt)
-        except ValueError:
-            pass
-    raise ValueError("time data '{:s}' not a recognized format".format(t))
 
 
 def get_days_either_side(days: List[datetime], days_either_side: int) -> List[datetime]:
@@ -393,6 +215,7 @@ def create_plots_regression():
         plt.show()
 
 
+# put feature h5 file in forecaster class
 if __name__ == "__main__":
     # # ===== USING THE TREMOR DATA CLASS =======
     # t = TremorData()
@@ -404,9 +227,4 @@ if __name__ == "__main__":
 
     os.chdir('..')  # set working directory to root
 
-    # put feature h5 file in forecaster class
     create_plots_regression()
-
-
-
-
