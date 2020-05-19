@@ -195,10 +195,8 @@ class TremorData(object):
         ti = datetimeify(ti)
         tf = datetimeify(tf)
 
-        # QUESTION FIXME if ti anf tf are consecutive days, only 1 day of data is updated
-        # QUESTION FIXME this is the data of first day
-        # QUESTION FIXME so update method does not download data for tf
-        ndays = (tf - ti).days
+        # adding 1 as the difference between tf and ti does not count tf
+        ndays = (tf - ti).days + 1
 
         # parallel data collection
         # pars = [[i, ti] for i in range(ndays)]
@@ -325,6 +323,7 @@ def read_hdh5(store_path: str):
     data = []
     for key in store.keys():
         data.append(store[key])
+    store.close()
     data = pd.concat(data)
     data.sort_index(inplace=True)
     return data

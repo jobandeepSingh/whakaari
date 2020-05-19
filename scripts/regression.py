@@ -227,4 +227,10 @@ if __name__ == "__main__":
 
     os.chdir('..')  # set working directory to root
 
-    create_plots_regression()
+    # create_plots_regression()
+
+    td = TremorData()
+    days_bracket = 2
+    delta = timedelta(days=days_bracket)
+    for erp in td.tes:
+        td.update(erp-delta, erp+delta)
