@@ -9,3 +9,4 @@ _tmp/
 .vscode/
 *.png
 .idea/
+.Rproj.user

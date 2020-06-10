@@ -96,6 +96,7 @@ class TremorData(object):
     def __init__(self, n_jobs=6):
         self.n_jobs = n_jobs
         self.file = os.sep.join(getfile(currentframe()).split(os.sep)[:-2] + ['data', 'raw_data.h5'])
+        self.df = None
         self._assess()
 
     def __repr__(self):
@@ -174,7 +175,7 @@ class TremorData(object):
                 return 1.
         return 0.
 
-    def update(self, ti=None, tf=None):
+    def update(self, ti=None, tf=None, secs_between_obs=None):
         """ Obtain latest GeoNet data.
             Parameters:
             -----------
@@ -201,6 +202,10 @@ class TremorData(object):
         # parallel data collection
         # pars = [[i, ti] for i in range(ndays)]
         pars = [[ti, self.file, i] for i in range(ndays)]
+        if secs_between_obs:  # add secs_between_obs if given
+            for p in pars:
+                p.append(secs_between_obs)
+
         p = Pool(self.n_jobs)
         p.starmap(get_data_for_day, pars)
         p.close()
@@ -247,6 +252,26 @@ class TremorData(object):
         # subset data
         inds = (self.df.index >= ti) & (self.df.index < tf)
         return self.df.loc[inds]
+
+    def set_data(self, ti: List[datetime] = None, tf: List[datetime] = None) -> None:
+        """
+        Sets the TremorData object to hold only the data between the periods specified by ti and tf.
+
+        :param List[datetime] ti: list of datetime of period starts
+        :param List[datetime] tf: list of date time of period ends
+        :return: None
+        """
+        if len(ti) != len(tf):
+            raise ValueError("ti and tf lists do not match")
+
+        # get the data in the time periods specified
+        data = [None]*len(ti)
+        for i in len(ti):
+            data[i] = self.get_data(ti[i], tf[i])
+
+        # set the df to the collected data
+        self.df = pd.concat(data)
+        self.df.sort_index(inplace=True)
 
     def plot(self, data_streams='rsam', save='tremor_data.png', ylim=[0, 5000]):
         """ Plot tremor data.
@@ -318,15 +343,27 @@ class TremorData(object):
         plt.savefig(save, dpi=400)
 
 
-def read_hdh5(store_path: str):
+def read_hdh5(store_path: str, file: str = None):
     store = pd.HDFStore(store_path)
     data = []
-    for key in store.keys():
-        data.append(store[key])
+    if file is None:
+        for key in store.keys():
+            data.append(store[key])
+    else:
+        data.append(store[file])
     store.close()
     data = pd.concat(data)
     data.sort_index(inplace=True)
     return data
+
+
+def is_in_store(file_name: str, store_path: str):
+    store = pd.HDFStore(store_path)
+    if file_name in store.keys():
+        store.close()
+        return True
+    store.close()
+    return False
 
 
 def write_to_hdf5(store_path: str, fp: str, df: pd.DataFrame):
@@ -335,7 +372,8 @@ def write_to_hdf5(store_path: str, fp: str, df: pd.DataFrame):
     store.close()
 
 
-def get_data_for_day(t0: datetime, store: str, i: int = 0, secs_between_obs: int = DEFAULT_SECS_BETWEEN_OBS):
+def get_data_for_day(t0: datetime, store: str, i: int = 0, secs_between_obs: int = DEFAULT_SECS_BETWEEN_OBS,
+                     overwrite = False):
     """
     Download WIZ data for given 24 hour period, writing data to temporary file.
 
@@ -354,11 +392,12 @@ def get_data_for_day(t0: datetime, store: str, i: int = 0, secs_between_obs: int
 
     # check if data already in store
     fp = f"/Year_{date_time.year}/Month_{date_time.month}/Day_{date_time.day}_secs-between-obs={secs_between_obs}"
-    store = pd.HDFStore(store)
-    if fp in store:
+    if not overwrite:
+        store = pd.HDFStore(store)
+        if fp in store:
+            store.close()
+            return
         store.close()
-        return
-    store.close()
 
     # open clients
     client = FDSNClient("GEONET")

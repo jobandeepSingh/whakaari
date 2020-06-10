@@ -14,7 +14,9 @@ from matplotlib.lines import Line2D
 from typing import List
 import tables
 from statistics import median
-from scripts.TremorData import DEFAULT_SECS_BETWEEN_OBS, get_data_for_days, datetimeify, TremorData
+from inspect import getfile, currentframe
+from scripts.TremorData import DEFAULT_SECS_BETWEEN_OBS, get_data_for_days, datetimeify, TremorData, get_data_for_day
+from scripts.RegressionModel import RegressionModel
 
 # ignoring warnings related to naming convention of hdf5
 warnings.simplefilter('ignore', tables.NaturalNameWarning)
@@ -229,8 +231,23 @@ if __name__ == "__main__":
 
     # create_plots_regression()
 
-    td = TremorData()
-    days_bracket = 2
-    delta = timedelta(days=days_bracket)
-    for erp in td.tes:
-        td.update(erp-delta, erp+delta)
+    # td = TremorData()
+    #
+    # # get_data_for_day(datetime(2012, 8, 3), td.file, 0)
+    #
+    # days_bracket = 2
+    # delta = timedelta(days=days_bracket)
+    # for erp in td.tes:
+    #     td.update(erp-delta, erp+delta)
+
+    rm = RegressionModel(window=30, period_before=48)
+    rm.feature_selection(output=False)
+
+    # # ====== Updating some data as its patchy =====
+    # store = os.sep.join(getfile(currentframe()).split(os.sep)[:-2] + ['data', 'raw_data.h5'])
+    # dates = [datetime(2012, 8, 7), datetime(2013, 8, 22), datetime(2013, 10, 6),
+    #          datetime(2016, 4, 30), datetime(2019, 12, 12)]
+    # for d in dates:
+    #     print(f"Getting data for {d}")
+    #     get_data_for_day(d, store, overwrite=True)
+    # print("Done updating data")
