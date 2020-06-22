@@ -241,7 +241,7 @@ if __name__ == "__main__":
     #     td.update(erp-delta, erp+delta)
 
     rm = RegressionModel(window=30, period_before=48)
-    rm.feature_selection(output=False)
+    features = rm.feature_selection(output=False)
 
     # # ====== Updating some data as its patchy =====
     # store = os.sep.join(getfile(currentframe()).split(os.sep)[:-2] + ['data', 'raw_data.h5'])

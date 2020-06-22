@@ -10,6 +10,7 @@ from tsfresh import extract_features
 from tsfresh.utilities.dataframe_functions import impute
 from inspect import getfile, currentframe
 import os
+from itertools import chain
 
 
 class RegressionModel(object):
@@ -310,60 +311,84 @@ class RegressionModel(object):
             if i in erp_period:
                 return i
 
-    def feature_selection(self, output: bool=True):
+    def read_rel_feats(self, filename: str) -> List[str]:
+        with open(filename, "r") as f:
+            file_contents = f.readlines()
+        feats = [feat.strip() for feat in file_contents[1:]]  # using [1:] to not read the title 'relevant features'
+        return feats
+
+    def feature_selection(self, output: bool = True, recompute: bool = False):
 
         # load the feature matrix and the target label vector
         fm, ys = self._load_data()
-        rel_feats = []
-        p_vals = []
-        all_feats = []
-        for ep in self.eps:  # loop through the eruptive periods
+
+        # initial lists to hold information about selected features
+        # using 2d arrays, [[],[],[],[],[]] where each inner list will hold 4 lists
+        # 1 for each ep_dropped within each eruption not seen
+        rel_feats = [[] for i in range(len(self.eps))]
+        # p_vals = [[] for i in range(len(self.eps))]
+        # all_feats = [[] for i in range(len(self.eps))]
+
+        for idx, erp_not_seen in enumerate(self.eps):  # loop through the eruptive periods
             # exclude the current eruptive period
-            inds = (fm.index < ep[0]) | (ep[-1] < fm.index)
-            fmp = fm.loc[inds]
-            ysp = ys.loc[inds]
+            inds_not_seen = (fm.index < erp_not_seen[0]) | (erp_not_seen[-1] < fm.index)
+            erps_left = self.eps[:idx]+self.eps[idx+1:]
 
             # get the current eruption
-            eruption = self.get_erp(ep)
-            eruption = f"{eruption.year}_{eruption.month}_{eruption.day}"
-            print(f"writing selecting features to  file for {eruption}")
+            eruption_not_seen = self.get_erp(erp_not_seen)
+            eruption_not_seen = f"{eruption_not_seen.year}-{eruption_not_seen.month}-{eruption_not_seen.day}"
+            print(f"selecting features while have not seen {eruption_not_seen}")
 
-            # find significant features
-            select = FeatureSelector(n_jobs=self.n_jobs, ml_task='regression')
-            select.fit_transform(fmp, ysp['label'])  # using ['label'] as pd.Series is needed by FeatureSelector
+            # loop over all other eruptive periods
+            for ep in erps_left:
+                # get the current eruption
+                erp_dropped = self.get_erp(ep)
+                erp_dropped = f"{erp_dropped.year}-{erp_dropped.month}-{erp_dropped.day}"
+                rel_feat_file = f"{self.featdir}/{eruption_not_seen}/relevant_feats_{erp_dropped}.fts"
+                feats_p_value_file = f"{self.featdir}/{eruption_not_seen}/feats_p-values_{erp_dropped}.fts"
 
-            # remove the spaces in feature names
-            def fix_feature_names(name: str):
-                return name.replace(" ", "")
-            features = list(map(fix_feature_names, select.features))
-            relevant_features = list(map(fix_feature_names, select.relevant_features))
+                if (not recompute) and os.path.isfile(rel_feat_file):
+                    # read in the relevant feature file
+                    relevant_features = self.read_rel_feats(rel_feat_file)
+                    rel_feats[idx].append(relevant_features)
+                    continue  # go to the next iteration of for loop
 
-            rel_feats.append(relevant_features)
-            p_vals.append(select.p_values)
-            all_feats.append(features)
+                # exclude the current eruptive period
+                inds = inds_not_seen & ((fm.index < ep[0]) | (ep[-1] < fm.index))
+                fmp = fm.loc[inds]
+                ysp = ys.loc[inds]
 
-            if output:
-                # write features and their p_values to csv
-                with open(f"{self.featdir}/feats_p-values_{eruption}.fts", "w") as fp:
-                    fp.write("features p_values\n")
-                    for feat, p_val in zip(features, select.p_values):
-                        fp.write(f"{feat} {p_val}\n")
+                # find significant features
+                select = FeatureSelector(n_jobs=self.n_jobs, ml_task='regression')
+                select.fit_transform(fmp, ysp['label'])  # using ['label'] as pd.Series is needed by FeatureSelector
 
-                # write relevant features to csv
-                with open(f"{self.featdir}/relevant_feats_{eruption}.fts", "w") as fp:
-                    fp.write("relevant_features\n")
-                    for feat in relevant_features:
-                        fp.write(f"{feat}\n")
+                # remove the spaces in feature names
+                def fix_feature_names(name: str):
+                    return name.replace(" ", "")
+                features = list(map(fix_feature_names, select.features))
+                relevant_features = list(map(fix_feature_names, select.relevant_features))
 
-        rel_feats = np.array(rel_feats)
-        p_vals = np.array(p_vals) < 0.05
-        all_feats = np.array(all_feats)
+                rel_feats[idx].append(relevant_features)
+                # p_vals[idx].append(select.p_values)
+                # all_feats[idx].append(features)
 
-        sets = []
-        for feats, pval in zip(all_feats, p_vals):
-            sets.append(feats[pval])
+                if output:
+                    # write features and their p_values to csv
+                    makedir(f"{self.featdir}/{eruption_not_seen}")
+                    with open(feats_p_value_file, "w") as fp:
+                        fp.write("features p_values\n")
+                        for feat, p_val in zip(features, select.p_values):
+                            fp.write(f"{feat} {p_val}\n")
 
+                    # write relevant features to csv
+                    with open(rel_feat_file, "w") as fp:
+                        fp.write("relevant_features\n")
+                        for feat in relevant_features:
+                            fp.write(f"{feat}\n")
 
+        # rel_feats = np.array(rel_feats)
+        # union = list(set(chain.from_iterable(rel_feats[0])))  # get the union of all from rel_feats[0]
+        return rel_feats
 
 
 def dt_ceil(dt: datetime):
