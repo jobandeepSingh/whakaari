@@ -242,7 +242,11 @@ if __name__ == "__main__":
 
     rm = RegressionModel(window=30, period_before=48)
     features = rm.feature_selection(output=False)
-
+    aggregated_features_4 = rm.feature_aggregation(features, 4)
+    aggregated_features_3 = rm.feature_aggregation(features, 3)
+    aggregated_features_2 = rm.feature_aggregation(features, 2)
+    aggregated_features_1 = rm.feature_aggregation(features, 1)
+    print("hi")
     # # ====== Updating some data as its patchy =====
     # store = os.sep.join(getfile(currentframe()).split(os.sep)[:-2] + ['data', 'raw_data.h5'])
     # dates = [datetime(2012, 8, 7), datetime(2013, 8, 22), datetime(2013, 10, 6),

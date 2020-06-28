@@ -5,12 +5,12 @@ from tsfresh.transformers import FeatureSelector
 import pandas as pd
 import numpy as np
 from tsfresh.feature_extraction.settings import ComprehensiveFCParameters, MinimalFCParameters, EfficientFCParameters
-from typing import List
+from typing import List, Dict, Set
 from tsfresh import extract_features
 from tsfresh.utilities.dataframe_functions import impute
 from inspect import getfile, currentframe
 import os
-from itertools import chain
+from itertools import chain, combinations
 
 
 class RegressionModel(object):
@@ -306,33 +306,50 @@ class RegressionModel(object):
 
         return fm, ys
 
-    def get_erp(self, erp_period: List[datetime]):
+    def get_erp(self, erp_period: List[datetime]) -> datetime:
         for i in self.data.tes:
             if i in erp_period:
                 return i
 
-    def read_rel_feats(self, filename: str) -> List[str]:
+    @ staticmethod
+    def read_rel_feats(filename: str) -> List[str]:
         with open(filename, "r") as f:
             file_contents = f.readlines()
         feats = [feat.strip() for feat in file_contents[1:]]  # using [1:] to not read the title 'relevant features'
         return feats
 
-    def feature_selection(self, output: bool = True, recompute: bool = False):
+    def feature_selection(self, output: bool = True, recompute: bool = False) -> Dict[str, List[List[str]]]:
+        """
+        Do feature selection, by dropping each eruption (the not seen eruption) and then taking the rest of the
+        eruptions and dropping an eruption at a time and selecting features based on the others.
+
+        :param output: True if files for relevant features, and all features are wanted.
+                        These are saved in the self.featdir with extension .fts
+        :param recompute: True if features to be reselected even if they already exist.
+        :return: dictionary where key is eruption that  was not seen (format 'YYY-MM-DD') and
+                    the value is the 2d list of features selected by dropping other eruptions one at a time.
+        """
 
         # load the feature matrix and the target label vector
         fm, ys = self._load_data()
 
-        # initial lists to hold information about selected features
-        # using 2d arrays, [[],[],[],[],[]] where each inner list will hold 4 lists
+        # dictionary to hold information about selected features
+        # using list, where it will hold 4 lists
         # 1 for each ep_dropped within each eruption not seen
-        rel_feats = [[] for i in range(len(self.eps))]
+        rel_feats = dict()
+        for erp in self.eps:
+            # get the current eruption
+            eruption = self.get_erp(erp)
+            eruption = f"{eruption.year}-{eruption.month}-{eruption.day}"
+            rel_feats[eruption] = []
+
         # p_vals = [[] for i in range(len(self.eps))]
         # all_feats = [[] for i in range(len(self.eps))]
 
         for idx, erp_not_seen in enumerate(self.eps):  # loop through the eruptive periods
             # exclude the current eruptive period
             inds_not_seen = (fm.index < erp_not_seen[0]) | (erp_not_seen[-1] < fm.index)
-            erps_left = self.eps[:idx]+self.eps[idx+1:]
+            erps_left = self.eps[:idx] + self.eps[idx + 1:]
 
             # get the current eruption
             eruption_not_seen = self.get_erp(erp_not_seen)
@@ -350,7 +367,7 @@ class RegressionModel(object):
                 if (not recompute) and os.path.isfile(rel_feat_file):
                     # read in the relevant feature file
                     relevant_features = self.read_rel_feats(rel_feat_file)
-                    rel_feats[idx].append(relevant_features)
+                    rel_feats[eruption_not_seen].append(relevant_features)
                     continue  # go to the next iteration of for loop
 
                 # exclude the current eruptive period
@@ -365,10 +382,11 @@ class RegressionModel(object):
                 # remove the spaces in feature names
                 def fix_feature_names(name: str):
                     return name.replace(" ", "")
+
                 features = list(map(fix_feature_names, select.features))
                 relevant_features = list(map(fix_feature_names, select.relevant_features))
 
-                rel_feats[idx].append(relevant_features)
+                rel_feats[eruption_not_seen].append(relevant_features)
                 # p_vals[idx].append(select.p_values)
                 # all_feats[idx].append(features)
 
@@ -386,9 +404,40 @@ class RegressionModel(object):
                         for feat in relevant_features:
                             fp.write(f"{feat}\n")
 
-        # rel_feats = np.array(rel_feats)
-        # union = list(set(chain.from_iterable(rel_feats[0])))  # get the union of all from rel_feats[0]
         return rel_feats
+
+    def feature_aggregation(self, features: Dict[str, List[List[str]]], num_erp_feats_aggregate) -> \
+            Dict[str, List[str]]:
+        """
+        Computes the required feature intersection over a number of lists for each eruption
+
+        :param features: dictionary where key is eruption (format 'YYYY-MM-DD') and
+                            the value is the 2d list of features to aggregate
+        :param num_erp_feats_aggregate: number of set of features to take intersection between
+        :return: dictionary where key is the eruption (format 'YYYY-MM-DD') and the value is a list of features
+        """
+
+        aggregated_feats = dict()
+        for erp in self.data.tes:  # loop over all eruptions
+            erp = f"{erp.year}-{erp.month}-{erp.day}"
+            all_combinations = list(combinations([i for i in range(len(features[erp]))], num_erp_feats_aggregate))
+
+            # build 2d list for combination of features
+            feat_combinations = [[None for m in range(num_erp_feats_aggregate)] for n in range(len(all_combinations))]
+            for i, combination in enumerate(all_combinations):  # get the tuple combination
+                for j, idx in enumerate(combination):  # iterate through the tuple
+                    feat_combinations[i][j] = set(features[erp][idx])
+
+            intersection = []
+            for f in feat_combinations:
+                # getting the intersection of features for a particular combination
+                intersection_f = set.intersection(*f)
+                intersection.append(intersection_f)
+
+            # get the union of all combinations
+            aggregated_feats[erp] = list(set.union(*intersection))
+
+        return aggregated_feats
 
 
 def dt_ceil(dt: datetime):
