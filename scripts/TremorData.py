@@ -136,25 +136,29 @@ class TremorData(object):
             'diff' (derivative), 'log' (base 10 logarithm) and 'stft' (short-time
             Fourier transform averaged across 40-45 periods).
         """
-        for col in self.df.columns:
-            if col is 'time': continue
-            # inverse
-            if 'inv_' + col not in self.df.columns:
-                self.df['inv_' + col] = 1. / self.df[col]
-            # diff
-            if 'diff_' + col not in self.df.columns:
-                self.df['diff_' + col] = self.df[col].diff()
-                self.df['diff_' + col][0] = 0.
-            # log
-            if 'log_' + col not in self.df.columns:
-                self.df['log_' + col] = np.log10(self.df[col])
-            # stft
-            if 'stft_' + col not in self.df.columns:
-                seg, freq = [12, 16]
-                data = pd.Series(np.zeros(seg * 6 - 1))
-                data = data.append(self.df[col], ignore_index=True)
-                Z = abs(stft(data.values, window='nuttall', nperseg=seg * 6, noverlap=seg * 6 - 1, boundary=None)[2])
-                self.df['stft_' + col] = np.mean(Z[freq:freq + 2, :], axis=0)
+
+        if 'inv_rsam' not in self.df.columns:
+            self.df['inv_rsam'] = 1. / self.df['rsam']
+
+        # for col in self.df.columns:
+        #     if col is 'time': continue
+        #     # inverse
+        #     if 'inv_' + col not in self.df.columns:
+        #         self.df['inv_' + col] = 1. / self.df[col]
+        #     # diff
+        #     if 'diff_' + col not in self.df.columns:
+        #         self.df['diff_' + col] = self.df[col].diff()
+        #         self.df['diff_' + col][0] = 0.
+        #     # log
+        #     if 'log_' + col not in self.df.columns:
+        #         self.df['log_' + col] = np.log10(self.df[col])
+        #     # stft
+        #     if 'stft_' + col not in self.df.columns:
+        #         seg, freq = [12, 16]
+        #         data = pd.Series(np.zeros(seg * 6 - 1))
+        #         data = data.append(self.df[col], ignore_index=True)
+        #         Z = abs(stft(data.values, window='nuttall', nperseg=seg * 6, noverlap=seg * 6 - 1, boundary=None)[2])
+        #         self.df['stft_' + col] = np.mean(Z[freq:freq + 2, :], axis=0)
 
     def _is_eruption_in(self, days, from_time):  # FIXME add another parameter to look backward too?
         """ Binary classification of eruption imminence.

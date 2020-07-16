@@ -219,14 +219,6 @@ def create_plots_regression():
 
 # put feature h5 file in forecaster class
 if __name__ == "__main__":
-    # # ===== USING THE TREMOR DATA CLASS =======
-    # t = TremorData()
-    # look_forward = 2.
-    # delta = timedelta(days=look_forward)
-    # for eruption in t.tes:
-    #     t.update(ti=eruption-delta, tf=eruption) # does linear interpolation which is not needed
-    #     print(f"updated: {eruption-delta} to {eruption}")
-
     os.chdir('..')  # set working directory to root
 
     # create_plots_regression()
@@ -240,13 +232,54 @@ if __name__ == "__main__":
     # for erp in td.tes:
     #     td.update(erp-delta, erp+delta)
 
-    rm = RegressionModel(window=30, period_before=48)
+    # rm = RegressionModel(window=30, period_before=48)
+    # features = rm.feature_selection(output=False)
+    # aggregated_features_4 = rm.feature_aggregation(features, 4)
+    # aggregated_features_3 = rm.feature_aggregation(features, 3)
+    # aggregated_features_2 = rm.feature_aggregation(features, 2)
+    # aggregated_features_1 = rm.feature_aggregation(features, 1)
+    # rm.update_fm_col_names()
+    # rm.train(aggregated_features_4, 'LR', '4')
+    # rm.train(aggregated_features_3, 'LR', '3')
+    # rm.train(aggregated_features_2, 'LR', '2')
+    # rm.train(aggregated_features_1, 'LR', '1')
+    #
+    # rm.train(aggregated_features_4, 'RF', '4')
+    # rm.train(aggregated_features_3, 'RF', '3')
+    # rm.train(aggregated_features_2, 'RF', '2')
+    # rm.train(aggregated_features_1, 'RF', '1')
+    #
+    # rm.train(aggregated_features_4, 'GBR', '4')
+    # rm.train(aggregated_features_3, 'GBR', '3')
+    # rm.train(aggregated_features_2, 'GBR', '2')
+    # rm.train(aggregated_features_1, 'GBR', '1')
+
+    # INVERSE
+    rm = RegressionModel(window=30, period_before=48, data_streams=['rsam', 'mf', 'hf', 'dsar', 'inv_rsam'])
     features = rm.feature_selection(output=False)
     aggregated_features_4 = rm.feature_aggregation(features, 4)
     aggregated_features_3 = rm.feature_aggregation(features, 3)
     aggregated_features_2 = rm.feature_aggregation(features, 2)
     aggregated_features_1 = rm.feature_aggregation(features, 1)
-    print("hi")
+    rm.update_fm_col_names()
+
+    rm.train(aggregated_features_4, 'INV_LR', '4')
+    rm.train(aggregated_features_3, 'INV_LR', '3')
+    rm.train(aggregated_features_2, 'INV_LR', '2')
+    rm.train(aggregated_features_1, 'INV_LR', '1')
+
+    rm.train(aggregated_features_4, 'INV_RF', '4')
+    rm.train(aggregated_features_3, 'INV_RF', '3')
+    rm.train(aggregated_features_2, 'INV_RF', '2')
+    rm.train(aggregated_features_1, 'INV_RF', '1')
+
+    rm.train(aggregated_features_4, 'INV_GBR', '4')
+    rm.train(aggregated_features_3, 'INV_GBR', '3')
+    rm.train(aggregated_features_2, 'INV_GBR', '2')
+    rm.train(aggregated_features_1, 'INV_GBR', '1')
+
+    print("end")
+
     # # ====== Updating some data as its patchy =====
     # store = os.sep.join(getfile(currentframe()).split(os.sep)[:-2] + ['data', 'raw_data.h5'])
     # dates = [datetime(2012, 8, 7), datetime(2013, 8, 22), datetime(2013, 10, 6),

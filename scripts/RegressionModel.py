@@ -10,7 +10,12 @@ from tsfresh import extract_features
 from tsfresh.utilities.dataframe_functions import impute
 from inspect import getfile, currentframe
 import os
-from itertools import chain, combinations
+from itertools import combinations
+from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import pickle
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 
 
 class RegressionModel(object):
@@ -52,8 +57,13 @@ class RegressionModel(object):
                 ep.append(erp - self.period_before + _DAY * i)
             self.eps.append(ep)
 
+        # make sure data around eruptions is present
         for erp in self.data.tes:
             self.data.update(dt_floor(erp - self.period_before), dt_ceil(erp + self.period_after), self.sbo)
+
+        # compute transformation if necessary
+        if any(['_' in ds for ds in data_streams]):
+            self.data._compute_transforms()
 
         # dtw - delta time window
         self.dtw = timedelta(seconds=self.window)
@@ -78,11 +88,6 @@ class RegressionModel(object):
 
         self.fm = None
         self.ys = None
-
-        # set the data to only the data needed for regression
-        # FIXME possibly not needed
-        # self.data.set_data([t-self.period_before for t in self.data.tes],
-        #                    [t+self.period_after for t in self.data.tes])
 
         # add naming convention for files
         if root is None:
@@ -212,8 +217,6 @@ class RegressionModel(object):
             # option 3, expand both
             # QUESTION what is purpose of update_feature_matrix
             if any([more_cols, pad_left > 0, pad_right > 0]) and self.update_feature_matrix:
-                # FIXME need to change to hdf5
-                # fm = pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], infer_datetime_format=True)
                 fm = feat_df[:]
                 if more_cols:
                     # expand columns now
@@ -243,16 +246,11 @@ class RegressionModel(object):
                     fm = pd.concat([fm, fm2], sort=False)
 
                 # write updated file output
-                # FIXME need to change to hdf5
-                # fm.to_csv(self.featfile, index=True, index_label='time')
                 write_to_hdf5(self.featfile, fp, fm)
                 # trim output
                 fm = fm.iloc[i0:i1]
             else:
-                # read relevant part of matrix
-                # FIXME need to change to hdf5
-                # fm = pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], infer_datetime_format=True,
-                #                  header=0, skiprows=range(1, i0 + 1), nrows=i1 - i0)
+                # read feature matrix
                 fm = read_hdh5(self.featfile, fp)
         else:
             # create feature matrix from scratch
@@ -260,8 +258,6 @@ class RegressionModel(object):
             fm = extract_features(df, column_id='id', n_jobs=self.n_jobs, default_fc_parameters=cfp,
                                   impute_function=impute)
             fm.index = pd.Series(wd)
-            # FIXME need to change to hdf5
-            # fm.to_csv(self.featfile, index=True, index_label='time')
             write_to_hdf5(self.featfile, fp, fm)
 
         ys = pd.DataFrame(self._get_label(fm.index, eruption), columns=['label'], index=fm.index)
@@ -311,7 +307,7 @@ class RegressionModel(object):
             if i in erp_period:
                 return i
 
-    @ staticmethod
+    @staticmethod
     def read_rel_feats(filename: str) -> List[str]:
         with open(filename, "r") as f:
             file_contents = f.readlines()
@@ -348,7 +344,7 @@ class RegressionModel(object):
 
         for idx, erp_not_seen in enumerate(self.eps):  # loop through the eruptive periods
             # exclude the current eruptive period
-            inds_not_seen = (fm.index < erp_not_seen[0]) | (erp_not_seen[-1] < fm.index)
+            inds_seen = (fm.index < erp_not_seen[0]) | (erp_not_seen[-1] < fm.index)
             erps_left = self.eps[:idx] + self.eps[idx + 1:]
 
             # get the current eruption
@@ -371,7 +367,7 @@ class RegressionModel(object):
                     continue  # go to the next iteration of for loop
 
                 # exclude the current eruptive period
-                inds = inds_not_seen & ((fm.index < ep[0]) | (ep[-1] < fm.index))
+                inds = inds_seen & ((fm.index < ep[0]) | (ep[-1] < fm.index))
                 fmp = fm.loc[inds]
                 ysp = ys.loc[inds]
 
@@ -379,12 +375,8 @@ class RegressionModel(object):
                 select = FeatureSelector(n_jobs=self.n_jobs, ml_task='regression')
                 select.fit_transform(fmp, ysp['label'])  # using ['label'] as pd.Series is needed by FeatureSelector
 
-                # remove the spaces in feature names
-                def fix_feature_names(name: str):
-                    return name.replace(" ", "")
-
-                features = list(map(fix_feature_names, select.features))
-                relevant_features = list(map(fix_feature_names, select.relevant_features))
+                features = self.fix_feature_names(select.features)
+                relevant_features = self.fix_feature_names(select.relevant_features)
 
                 rel_feats[eruption_not_seen].append(relevant_features)
                 # p_vals[idx].append(select.p_values)
@@ -438,6 +430,106 @@ class RegressionModel(object):
             aggregated_feats[erp] = list(set.union(*intersection))
 
         return aggregated_feats
+
+    @staticmethod
+    def fix_feature_names(names: List[str]):
+        # remove the spaces in feature names
+        def fix_func(name: str):
+            return name.replace(" ", "")
+
+        return list(map(fix_func, names))
+
+    def update_fm_col_names(self):
+        self.fm.columns = self.fix_feature_names(self.fm.columns.values)
+
+    def train(self, features_to_use: Dict[str, List[str]], classifier: str = 'LR', suffix: str = '',
+              plot_res: bool = True):
+        print("hi")
+
+        for idx, erp_not_seen in enumerate(self.eps):  # loop through the eruptive periods
+            # exclude the current eruptive period
+            inds_seen = (self.fm.index < erp_not_seen[0]) | (erp_not_seen[-1] < self.fm.index)
+
+            # get the current eruption
+            eruption_not_seen = self.get_erp(erp_not_seen)
+            print(f"training model while having not seen {eruption_not_seen}")
+            eruption_not_seen = f"{eruption_not_seen.year}-{eruption_not_seen.month}-{eruption_not_seen.day}"
+            model_dir = f"{self.modeldir}/{classifier}"
+            makedir(model_dir)
+            model_file = f"{model_dir}/{eruption_not_seen}#{suffix}.mod"
+
+            # get the feature matrix for only the feature to be used
+            feats = features_to_use[eruption_not_seen]
+            fm = self.fm[feats]
+
+            if os.path.isfile(model_file):
+                model = pickle.load(open(model_file, 'rb'))
+            else:
+                model = self.get_classifier(classifier)
+                model.fit(fm[inds_seen], list(self.ys[inds_seen]['label']))
+                pickle.dump(model, open(model_file, 'wb'))
+
+            if plot_res:
+                plot_dir = f"{self.plotdir}/{classifier}"
+                makedir(plot_dir)
+                plot_file = f"{plot_dir}/{eruption_not_seen}#{suffix}"
+
+                # OUT OF SAMPLE
+                predictions = model.predict(fm[~inds_seen])
+                actual = self.ys[~inds_seen]['label'].values
+                self.create_residual_plot(self.ys[~inds_seen].index, actual-predictions,
+                                          "Out of Sample Residuals", f"{plot_file}-OUT-OF-SAMPLE.png")
+
+                # IN SAMPLE
+                predictions = model.predict(fm[inds_seen])
+                actual = self.ys[inds_seen]['label'].values
+                self.create_residual_plot(self.ys[inds_seen].index, actual-predictions,
+                                          "In Sample Residuals", f"{plot_file}-IN-SAMPLE.png")
+
+                # feature importance plot
+                if hasattr(model, "feature_importances_"):
+                    num_imp_feats = 10
+                    # Rearrange feature names so they match the feature importances
+                    indices = np.argsort(model.feature_importances_)[::-1]
+                    feature_names = [fm.columns.values[i] for i in indices]
+
+                    plt.figure(figsize=(18, 6))
+                    plt.title("Feature Importance")
+                    # Add bars
+                    plt.barh(range(num_imp_feats), model.feature_importances_[indices][:num_imp_feats])
+                    # Add feature names as y-axis labels
+                    plt.yticks(range(num_imp_feats), feature_names[:num_imp_feats])
+                    plt.tight_layout()  # make sure the full label can be seen
+
+                    plt.savefig(f"{plot_file}-feature-importance.png", format='png', dpi=300)
+                    plt.close()
+
+    @staticmethod
+    def create_residual_plot(x, y, title, filename):
+        f, ax = plt.subplots(1, 1, figsize=(24, 12))
+        ax.set_xlim([x[0], x[-1]])
+        ax.scatter(x, y)
+        plt.title(title)
+        plt.ylabel("(actual-prediction): time to eruption in seconds")
+        plt.xlabel("Time")
+        ext = filename.split(".")[-1]
+        plt.savefig(filename, format=ext, dpi=300)
+        plt.close()
+
+    def get_classifier(self, classifier):
+        if '_' in classifier:
+            classifier = classifier.split('_')[1]
+
+        if classifier == 'LR':  # linear regression
+            model = LinearRegression(n_jobs=self.n_jobs)
+        elif classifier == 'RF':  # random forest
+            model = RandomForestRegressor(n_jobs=self.n_jobs)
+        elif classifier == 'GBR':  # gradient boosting regression
+            model = GradientBoostingRegressor()
+        else:
+            raise ValueError(f"classifier {classifier} not recognised")
+
+        return model
 
 
 def dt_ceil(dt: datetime):
