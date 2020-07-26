@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pickle
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-
+import seaborn as sns
 
 class RegressionModel(object):
     def __init__(self, window: int, period_before: int, overlap: float = 0., period_after: int = None,
@@ -444,7 +444,7 @@ class RegressionModel(object):
 
     def train(self, features_to_use: Dict[str, List[str]], classifier: str = 'LR', suffix: str = '',
               plot_res: bool = True):
-        print("hi")
+        print(f"\n{classifier}-{suffix}")
 
         for idx, erp_not_seen in enumerate(self.eps):  # loop through the eruptive periods
             # exclude the current eruptive period
@@ -504,6 +504,17 @@ class RegressionModel(object):
                     plt.savefig(f"{plot_file}-feature-importance.png", format='png', dpi=300)
                     plt.close()
 
+                    # top 3 important features scatter plots
+                    for feat in feature_names[:3]:
+                        # plt.figure(figsize=(12, 6))
+                        plt.scatter(x=fm[inds_seen][feat], y=self.ys[inds_seen])
+                        plt.title("Feature vs Time to eruption")
+                        plt.ylabel("Time to eruption in seconds")
+                        plt.xlabel(f"Feature: {feat}")
+                        plt.tight_layout()
+                        plt.savefig(f"{plot_file}-feature-{feat}.png", format='png', dpi=300)
+                        plt.close()
+
     @staticmethod
     def create_residual_plot(x, y, title, filename):
         f, ax = plt.subplots(1, 1, figsize=(24, 12))
@@ -517,9 +528,6 @@ class RegressionModel(object):
         plt.close()
 
     def get_classifier(self, classifier):
-        if '_' in classifier:
-            classifier = classifier.split('_')[1]
-
         if classifier == 'LR':  # linear regression
             model = LinearRegression(n_jobs=self.n_jobs)
         elif classifier == 'RF':  # random forest

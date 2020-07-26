@@ -232,51 +232,30 @@ if __name__ == "__main__":
     # for erp in td.tes:
     #     td.update(erp-delta, erp+delta)
 
-    # rm = RegressionModel(window=30, period_before=48)
-    # features = rm.feature_selection(output=False)
-    # aggregated_features_4 = rm.feature_aggregation(features, 4)
-    # aggregated_features_3 = rm.feature_aggregation(features, 3)
-    # aggregated_features_2 = rm.feature_aggregation(features, 2)
-    # aggregated_features_1 = rm.feature_aggregation(features, 1)
-    # rm.update_fm_col_names()
-    # rm.train(aggregated_features_4, 'LR', '4')
-    # rm.train(aggregated_features_3, 'LR', '3')
-    # rm.train(aggregated_features_2, 'LR', '2')
-    # rm.train(aggregated_features_1, 'LR', '1')
-    #
-    # rm.train(aggregated_features_4, 'RF', '4')
-    # rm.train(aggregated_features_3, 'RF', '3')
-    # rm.train(aggregated_features_2, 'RF', '2')
-    # rm.train(aggregated_features_1, 'RF', '1')
-    #
-    # rm.train(aggregated_features_4, 'GBR', '4')
-    # rm.train(aggregated_features_3, 'GBR', '3')
-    # rm.train(aggregated_features_2, 'GBR', '2')
-    # rm.train(aggregated_features_1, 'GBR', '1')
-
-    # INVERSE
-    rm = RegressionModel(window=30, period_before=48, data_streams=['rsam', 'mf', 'hf', 'dsar', 'inv_rsam'])
+    # rm = RegressionModel(window=30, period_before=48)  # NORMAL
+    rm = RegressionModel(window=30, period_before=48, data_streams=['rsam', 'mf', 'hf', 'dsar', 'inv_rsam'])  # INVERSE
     features = rm.feature_selection(output=False)
     aggregated_features_4 = rm.feature_aggregation(features, 4)
     aggregated_features_3 = rm.feature_aggregation(features, 3)
     aggregated_features_2 = rm.feature_aggregation(features, 2)
     aggregated_features_1 = rm.feature_aggregation(features, 1)
     rm.update_fm_col_names()
+    # rm.train(aggregated_features_4, 'LR', '4')
+    # rm.train(aggregated_features_3, 'LR', '3')
+    # rm.train(aggregated_features_2, 'LR', '2')
+    # rm.train(aggregated_features_1, 'LR', '1')
 
-    rm.train(aggregated_features_4, 'INV_LR', '4')
-    rm.train(aggregated_features_3, 'INV_LR', '3')
-    rm.train(aggregated_features_2, 'INV_LR', '2')
-    rm.train(aggregated_features_1, 'INV_LR', '1')
+    rm.train(aggregated_features_4, 'RF', '4')
+    rm.train(aggregated_features_3, 'RF', '3')
+    rm.train(aggregated_features_2, 'RF', '2')
+    rm.train(aggregated_features_1, 'RF', '1')
 
-    rm.train(aggregated_features_4, 'INV_RF', '4')
-    rm.train(aggregated_features_3, 'INV_RF', '3')
-    rm.train(aggregated_features_2, 'INV_RF', '2')
-    rm.train(aggregated_features_1, 'INV_RF', '1')
+    rm.train(aggregated_features_4, 'GBR', '4')
+    rm.train(aggregated_features_3, 'GBR', '3')
+    rm.train(aggregated_features_2, 'GBR', '2')
+    rm.train(aggregated_features_1, 'GBR', '1')
 
-    rm.train(aggregated_features_4, 'INV_GBR', '4')
-    rm.train(aggregated_features_3, 'INV_GBR', '3')
-    rm.train(aggregated_features_2, 'INV_GBR', '2')
-    rm.train(aggregated_features_1, 'INV_GBR', '1')
+
 
     print("end")
 
