@@ -457,6 +457,7 @@ class RegressionModel(object):
             model_dir = f"{self.modeldir}/{classifier}"
             makedir(model_dir)
             model_file = f"{model_dir}/{eruption_not_seen}#{suffix}.mod"
+            fm_columns_file = f"{model_dir}/{eruption_not_seen}#{suffix}.fts"
 
             # get the feature matrix for only the feature to be used
             feats = features_to_use[eruption_not_seen]
@@ -464,10 +465,15 @@ class RegressionModel(object):
 
             if os.path.isfile(model_file):
                 model = pickle.load(open(model_file, 'rb'))
+                fm_columns = pickle.load(open(fm_columns_file, 'rb'))
+
             else:
                 model = self.get_classifier(classifier)
                 model.fit(fm[inds_seen], list(self.ys[inds_seen]['label']))
                 pickle.dump(model, open(model_file, 'wb'))
+                # writing out the columns of fm as the model does not save this information
+                fm_columns = fm.columns.values
+                pickle.dump(fm_columns, open(fm_columns_file, 'wb'))
 
             if plot_res:
                 plot_dir = f"{self.plotdir}/{classifier}"
@@ -491,7 +497,7 @@ class RegressionModel(object):
                     num_imp_feats = 10
                     # Rearrange feature names so they match the feature importances
                     indices = np.argsort(model.feature_importances_)[::-1]
-                    feature_names = [fm.columns.values[i] for i in indices]
+                    feature_names = [fm_columns[i] for i in indices]
 
                     plt.figure(figsize=(18, 6))
                     plt.title("Feature Importance")
@@ -512,6 +518,7 @@ class RegressionModel(object):
                         plt.ylabel("Time to eruption in seconds")
                         plt.xlabel(f"Feature: {feat}")
                         plt.tight_layout()
+                        feat = feat.replace('"', '')
                         plt.savefig(f"{plot_file}-feature-{feat}.png", format='png', dpi=300)
                         plt.close()
 
