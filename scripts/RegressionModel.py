@@ -100,7 +100,7 @@ class RegressionModel(object):
         self.rootdir = os.sep.join(getfile(currentframe()).split(os.sep)[:-2])
         self.plotdir = f'{self.rootdir}/plots/{self.root}'
         self.modeldir = f'{self.rootdir}/models/{self.root}'
-        self.featdir = f'{self.rootdir}/features'
+        self.featdir = f'{self.rootdir}/features/{self.root}'
         self.featfile = f'{self.featdir}/{self.root}_features.h5'
         self.preddir = f'{self.rootdir}/predictions/{self.root}'
 
@@ -475,22 +475,29 @@ class RegressionModel(object):
                 fm_columns = fm.columns.values
                 pickle.dump(fm_columns, open(fm_columns_file, 'wb'))
 
+            # order of columns of fm needs to be the same as that used in model
+            fm = fm[fm_columns]
+
             if plot_res:
                 plot_dir = f"{self.plotdir}/{classifier}"
                 makedir(plot_dir)
                 plot_file = f"{plot_dir}/{eruption_not_seen}#{suffix}"
 
+                erp = self.get_erp(erp_not_seen)
+
                 # OUT OF SAMPLE
                 predictions = model.predict(fm[~inds_seen])
                 actual = self.ys[~inds_seen]['label'].values
-                self.create_residual_plot(self.ys[~inds_seen].index, actual-predictions,
-                                          "Out of Sample Residuals", f"{plot_file}-OUT-OF-SAMPLE.png")
+                self.create_residual_plot(self.ys[~inds_seen].index, actual, predictions,
+                                          "Out of Sample", f"{plot_file}-OUT-OF-SAMPLE.png", erp,
+                                          overlay=True)
 
                 # IN SAMPLE
                 predictions = model.predict(fm[inds_seen])
                 actual = self.ys[inds_seen]['label'].values
-                self.create_residual_plot(self.ys[inds_seen].index, actual-predictions,
-                                          "In Sample Residuals", f"{plot_file}-IN-SAMPLE.png")
+                self.create_residual_plot(self.ys[inds_seen].index, actual, predictions,
+                                          "In Sample", f"{plot_file}-IN-SAMPLE.png", erp,
+                                          overlay=True)
 
                 # feature importance plot
                 if hasattr(model, "feature_importances_"):
@@ -499,39 +506,57 @@ class RegressionModel(object):
                     indices = np.argsort(model.feature_importances_)[::-1]
                     feature_names = [fm_columns[i] for i in indices]
 
-                    plt.figure(figsize=(18, 6))
-                    plt.title("Feature Importance")
+                    f, ax = plt.subplots(1, 1, figsize=(18, 6))  # plt.figure(figsize=(18, 6))
+                    plt.title("Feature Importance", fontsize=40.)
                     # Add bars
                     plt.barh(range(num_imp_feats), model.feature_importances_[indices][:num_imp_feats])
                     # Add feature names as y-axis labels
-                    plt.yticks(range(num_imp_feats), feature_names[:num_imp_feats])
+                    plt.yticks(range(num_imp_feats), feature_names[:num_imp_feats], fontsize=25.)
+                    plt.xticks(fontsize=25.)
+                    for t in ax.get_xticklabels() + ax.get_yticklabels():  # increase of x and y tick labels
+                        t.set_fontsize(20.)
                     plt.tight_layout()  # make sure the full label can be seen
-
                     plt.savefig(f"{plot_file}-feature-importance.png", format='png', dpi=300)
                     plt.close()
 
                     # top 3 important features scatter plots
                     for feat in feature_names[:3]:
                         # plt.figure(figsize=(12, 6))
-                        plt.scatter(x=fm[inds_seen][feat], y=self.ys[inds_seen])
-                        plt.title("Feature vs Time to eruption")
-                        plt.ylabel("Time to eruption in seconds")
-                        plt.xlabel(f"Feature: {feat}")
+                        f, ax = plt.subplots(1, 1, figsize=(12, 12))
+                        plt.scatter(x=fm[inds_seen][feat], y=self.ys[inds_seen], alpha=0.3, s=10)
+                        plt.title("Feature vs Time to eruption",  fontsize=40.)
+                        plt.ylabel("Time to eruption in seconds",  fontsize=25.)
+                        plt.xlabel(f"Feature: {feat}",  fontsize=25.)
+                        for t in ax.get_xticklabels() + ax.get_yticklabels():  # increase of x and y tick labels
+                            t.set_fontsize(20.)
                         plt.tight_layout()
                         feat = feat.replace('"', '')
                         plt.savefig(f"{plot_file}-feature-{feat}.png", format='png', dpi=300)
                         plt.close()
 
     @staticmethod
-    def create_residual_plot(x, y, title, filename):
+    def create_residual_plot(x, actual, prediction, title, filename, erp, overlay=False):
+        y = actual-prediction
         f, ax = plt.subplots(1, 1, figsize=(24, 12))
         ax.set_xlim([x[0], x[-1]])
-        ax.scatter(x, y)
-        plt.title(title)
-        plt.ylabel("(actual-prediction): time to eruption in seconds")
-        plt.xlabel("Time")
+        ax.scatter(x, y, s=10, alpha=0.5, label='Residuals')  # Residuals
+        plt.title(f"{title} Residuals",  fontsize=40.)
+        plt.ylabel("(actual-prediction): time to eruption in seconds", fontsize=25.)
+        plt.xlabel("Time", fontsize=25.)
+        for t in ax.get_xticklabels() + ax.get_yticklabels():  # increase of x and y tick labels
+            t.set_fontsize(20.)
+        plt.axvline(erp, color='pink', label='Eruption')  # add eruption vertical line
+        plt.legend(fontsize=15.)
         ext = filename.split(".")[-1]
         plt.savefig(filename, format=ext, dpi=300)
+        if overlay:
+            # file name for plot with actual and predictions on top of residuals
+            newfilename = ".".join(filename.split(".")[:-1]) + "-overlay." + ext
+            ax.scatter(x, actual, s=10, alpha=0.5, color='r', label='Actual')  # actual
+            ax.scatter(x, prediction, s=10, alpha=0.5, color='g', label='Predictions') # predictions
+            plt.title(f"{title} Actual, Predictions and Residuals", fontsize=40.)
+            plt.legend(fontsize=15.)
+            plt.savefig(newfilename, format=ext, dpi=300)
         plt.close()
 
     def get_classifier(self, classifier):

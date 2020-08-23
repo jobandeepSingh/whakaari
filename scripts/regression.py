@@ -232,9 +232,10 @@ if __name__ == "__main__":
     # for erp in td.tes:
     #     td.update(erp-delta, erp+delta)
 
-    # rm = RegressionModel(window=30, period_before=48)  # NORMAL
-    rm = RegressionModel(window=30, period_before=48, data_streams=['rsam', 'mf', 'hf', 'dsar', 'inv_rsam'])  # INVERSE
-    features = rm.feature_selection(output=False)
+    rm = RegressionModel(window=30, period_before=48)  # NORMAL
+    # rm = RegressionModel(window=30, period_before=48,
+    #                       data_streams=['rsam', 'mf', 'hf', 'dsar', 'inv_rsam'])  # INVERSE
+    features = rm.feature_selection()
     aggregated_features_4 = rm.feature_aggregation(features, 4)
     aggregated_features_3 = rm.feature_aggregation(features, 3)
     aggregated_features_2 = rm.feature_aggregation(features, 2)
@@ -254,7 +255,6 @@ if __name__ == "__main__":
     rm.train(aggregated_features_3, 'GBR', '3')
     rm.train(aggregated_features_2, 'GBR', '2')
     rm.train(aggregated_features_1, 'GBR', '1')
-
 
 
     print("end")
