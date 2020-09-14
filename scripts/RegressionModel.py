@@ -16,12 +16,13 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pickle
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.feature_selection import SelectKBest, f_regression
 import seaborn as sns
 
 class RegressionModel(object):
     def __init__(self, window: int, period_before: int, overlap: float = 0., period_after: int = None,
                  data_streams: List[str] = ['rsam', 'mf', 'hf', 'dsar'], root: str = None, n_jobs: int = 6,
-                 sec_between_obs: int = DEFAULT_SECS_BETWEEN_OBS):
+                 sec_between_obs: int = DEFAULT_SECS_BETWEEN_OBS, freg = False):
         """
         Initialises RegressionModel Object
 
@@ -67,7 +68,7 @@ class RegressionModel(object):
 
         # dtw - delta time window
         self.dtw = timedelta(seconds=self.window)
-        self.dt = timedelta(seconds=self.sbo)  # timedelta(seconds=600)  # FIXME this variable need to be dynamic too!!
+        self.dt = timedelta(seconds=self.sbo)
         # dto - delta time non-overlapping section of windows
         self.dto = (1. - self.overlap) * self.dtw
         # iw - number of observations in a window
@@ -89,19 +90,26 @@ class RegressionModel(object):
         self.fm = None
         self.ys = None
 
+        self.freg = freg
+        if self.freg:
+            selector = 'sklearn_f_regression'
+        else:  # default is tsfresh feature selector
+            selector = 'tsfresh_feature_selector'
+
         # add naming convention for files
         if root is None:
             self.root = 'fm_{:3.2f}wndw_{:3.2f}ovlp_{:3.2f}pb_{:3.2f}pa'.format(self.window, self.overlap,
                                                                                 self.period_before.total_seconds(),
                                                                                 self.period_after.total_seconds())
             self.root += '_' + (('{:s}-' * len(self.data_streams))[:-1]).format(*sorted(self.data_streams))
+            self.root += f'-{selector}'
         else:
             self.root = root
         self.rootdir = os.sep.join(getfile(currentframe()).split(os.sep)[:-2])
         self.plotdir = f'{self.rootdir}/plots/{self.root}'
         self.modeldir = f'{self.rootdir}/models/{self.root}'
         self.featdir = f'{self.rootdir}/features/{self.root}'
-        self.featfile = f'{self.featdir}/{self.root}_features.h5'
+        self.featfile = f'{self.featdir}/features.h5'
         self.preddir = f'{self.rootdir}/predictions/{self.root}'
 
     def _construct_windows(self, nw, ti, i0=0, i1=None):
@@ -314,7 +322,8 @@ class RegressionModel(object):
         feats = [feat.strip() for feat in file_contents[1:]]  # using [1:] to not read the title 'relevant features'
         return feats
 
-    def feature_selection(self, output: bool = True, recompute: bool = False) -> Dict[str, List[List[str]]]:
+    def feature_selection(self, output: bool = True, recompute: bool = False,
+                          freg = False) -> Dict[str, List[List[str]]]:
         """
         Do feature selection, by dropping each eruption (the not seen eruption) and then taking the rest of the
         eruptions and dropping an eruption at a time and selecting features based on the others.
@@ -322,6 +331,7 @@ class RegressionModel(object):
         :param output: True if files for relevant features, and all features are wanted.
                         These are saved in the self.featdir with extension .fts
         :param recompute: True if features to be reselected even if they already exist.
+        :param freg: True if sklearn.feature_selection.f_regression is to be used for feature selection
         :return: dictionary where key is eruption that  was not seen (format 'YYY-MM-DD') and
                     the value is the 2d list of features selected by dropping other eruptions one at a time.
         """
@@ -357,8 +367,11 @@ class RegressionModel(object):
                 # get the current eruption
                 erp_dropped = self.get_erp(ep)
                 erp_dropped = f"{erp_dropped.year}-{erp_dropped.month}-{erp_dropped.day}"
-                rel_feat_file = f"{self.featdir}/{eruption_not_seen}/relevant_feats_{erp_dropped}.fts"
-                feats_p_value_file = f"{self.featdir}/{eruption_not_seen}/feats_p-values_{erp_dropped}.fts"
+
+                # file paths for feature selection output
+                feat_dir = f"{self.featdir}/{eruption_not_seen}"
+                rel_feat_file = f"{feat_dir}/relevant_feats_{erp_dropped}.fts"
+                feats_p_value_file = f"{feat_dir}/feats_p-values_{erp_dropped}.fts"
 
                 if (not recompute) and os.path.isfile(rel_feat_file):
                     # read in the relevant feature file
@@ -371,12 +384,21 @@ class RegressionModel(object):
                 fmp = fm.loc[inds]
                 ysp = ys.loc[inds]
 
-                # find significant features
-                select = FeatureSelector(n_jobs=self.n_jobs, ml_task='regression')
-                select.fit_transform(fmp, ysp['label'])  # using ['label'] as pd.Series is needed by FeatureSelector
-
-                features = self.fix_feature_names(select.features)
-                relevant_features = self.fix_feature_names(select.relevant_features)
+                if self.freg:
+                    n = 500
+                    select = SelectKBest(f_regression, k=n)
+                    select.fit(fmp, ysp['label'])
+                    indices = np.argsort(select.pvalues_)
+                    pvalues = select.pvalues_[indices]
+                    features = self.fix_feature_names(fmp.columns.values[indices])
+                    relevant_features = features[:n]
+                else:  # default is tsfresh feature selector
+                    # find significant features
+                    select = FeatureSelector(n_jobs=self.n_jobs, ml_task='regression')
+                    select.fit_transform(fmp, ysp['label'])  # using ['label'] as pd.Series is needed by FeatureSelector
+                    pvalues = select.p_values
+                    features = self.fix_feature_names(select.features)
+                    relevant_features = self.fix_feature_names(select.relevant_features)
 
                 rel_feats[eruption_not_seen].append(relevant_features)
                 # p_vals[idx].append(select.p_values)
@@ -384,10 +406,10 @@ class RegressionModel(object):
 
                 if output:
                     # write features and their p_values to csv
-                    makedir(f"{self.featdir}/{eruption_not_seen}")
+                    makedir(feat_dir)
                     with open(feats_p_value_file, "w") as fp:
                         fp.write("features p_values\n")
-                        for feat, p_val in zip(features, select.p_values):
+                        for feat, p_val in zip(features, pvalues):
                             fp.write(f"{feat} {p_val}\n")
 
                     # write relevant features to csv
