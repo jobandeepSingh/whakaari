@@ -10,7 +10,7 @@ from tsfresh import extract_features
 from tsfresh.utilities.dataframe_functions import impute
 from inspect import getfile, currentframe
 import os
-from itertools import combinations
+from itertools import combinations, product
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -514,12 +514,42 @@ class RegressionModel(object):
                                           "Out of Sample", f"{plot_file}-OUT-OF-SAMPLE.png", erp,
                                           overlay=True)
 
-                # IN SAMPLE
-                predictions = model.predict(fm[inds_seen])
-                actual = self.ys[inds_seen]['label'].values
-                self.create_residual_plot(self.ys[inds_seen].index, actual, predictions,
-                                          "In Sample", f"{plot_file}-IN-SAMPLE.png", erp,
-                                          overlay=True)
+                # ==== IN SAMPLE ====
+                # in sample plots are a 2x2 grid as there are 4 eruptions
+                fig, axs = plt.subplots(2, 2, figsize=(20, 10))
+
+                # building 2d list of in sample eruptive periods
+                in_sample_eps = []
+                for ep in self.eps:
+                    if erp not in ep:
+                        in_sample_eps.append(ep)
+
+                # i is the index for subplots
+                i = list(product([0, 1], [0, 1]))
+
+                for idx, ep in enumerate(in_sample_eps):
+                    ep_idx = (ep[0] < self.fm.index) & (self.fm.index < ep[-1])
+                    predictions = model.predict(fm[ep_idx])
+                    actual = self.ys[ep_idx]['label'].values
+                    yvals = actual - predictions
+                    xvals = self.ys[ep_idx].index
+                    insam_ep = self.get_erp(ep)
+                    axs[i[idx]].scatter(xvals, yvals, s=10, alpha=0.5, label='Residuals')
+                    axs[i[idx]].axvline(insam_ep, color='pink', label='Eruption', linewidth=3)
+                    axs[i[idx]].set_xlim([ep[0], ep[-1]])
+
+                axs[0, 1].legend(markerscale=5, fontsize=20)  # legend in the top right subplot
+                fig.suptitle('In Sample Residuals', fontsize=40.)  # common title
+
+                # add a big axis, hide frame
+                fig.add_subplot(111, frameon=False)
+                plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+                # add common x and y labels using the big axis
+                plt.xlabel('Time', fontsize=25.)
+                plt.ylabel('Time to eruption in seconds', fontsize=25, labelpad=50)
+
+                plt.savefig(f"{plot_file}-IN-SAMPLE.png", format="png", dpi=300)
+                plt.close()
 
                 # feature importance plot
                 if hasattr(model, "feature_importances_"):
@@ -563,21 +593,21 @@ class RegressionModel(object):
         ax.set_xlim([x[0], x[-1]])
         ax.scatter(x, y, s=10, alpha=0.5, label='Residuals')  # Residuals
         plt.title(f"{title} Residuals",  fontsize=40.)
-        plt.ylabel("(actual-prediction): time to eruption in seconds", fontsize=25.)
+        plt.ylabel("Time to eruption in seconds", fontsize=25.)
         plt.xlabel("Time", fontsize=25.)
         for t in ax.get_xticklabels() + ax.get_yticklabels():  # increase of x and y tick labels
             t.set_fontsize(20.)
-        plt.axvline(erp, color='pink', label='Eruption')  # add eruption vertical line
-        plt.legend(fontsize=15.)
+        plt.axvline(erp, color='pink', label='Eruption', linewidth=5)  # add eruption vertical line
+        ax.legend(markerscale=5, fontsize=20)
         ext = filename.split(".")[-1]
         plt.savefig(filename, format=ext, dpi=300)
         if overlay:
             # file name for plot with actual and predictions on top of residuals
             newfilename = ".".join(filename.split(".")[:-1]) + "-overlay." + ext
-            ax.scatter(x, actual, s=10, alpha=0.5, color='r', label='Actual')  # actual
-            ax.scatter(x, prediction, s=10, alpha=0.5, color='g', label='Predictions') # predictions
+            ax.scatter(x, prediction, s=10, alpha=0.5, color='g', label='Predictions')  # predictions
+            ax.plot(x, actual, linewidth=5, color='r', label='Actual')  # actual
             plt.title(f"{title} Actual, Predictions and Residuals", fontsize=40.)
-            plt.legend(fontsize=15.)
+            ax.legend(markerscale=5, fontsize=20)
             plt.savefig(newfilename, format=ext, dpi=300)
         plt.close()
 
