@@ -519,10 +519,7 @@ class RegressionModel(object):
                 fig, axs = plt.subplots(2, 2, figsize=(20, 10))
 
                 # building 2d list of in sample eruptive periods
-                in_sample_eps = []
-                for ep in self.eps:
-                    if erp not in ep:
-                        in_sample_eps.append(ep)
+                in_sample_eps = [ep for ep in self.eps if erp not in ep]
 
                 # i is the index for subplots
                 i = list(product([0, 1], [0, 1]))
