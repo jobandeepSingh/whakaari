@@ -603,7 +603,7 @@ class RegressionModel(object):
             newfilename = ".".join(filename.split(".")[:-1]) + "-overlay." + ext
             ax.scatter(x, prediction, s=10, alpha=0.5, color='g', label='Predictions')  # predictions
             ax.plot(x, actual, linewidth=5, color='r', label='Actual')  # actual
-            plt.title(f"{title} Actual, Predictions and Residuals", fontsize=40.)
+            plt.title(f"{title} Predictions and Residuals", fontsize=40.)
             ax.legend(markerscale=5, fontsize=20)
             plt.savefig(newfilename, format=ext, dpi=300)
         plt.close()
