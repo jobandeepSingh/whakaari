@@ -26,7 +26,7 @@ class MockForecastModel(BaseEstimator, ClassifierMixin):
 
         # classes_ gives the classes in numerical form
         # means that the first column in predict_prob is associated with 0 and second is with 1
-        self.classes_ = [0, 1]
+        self.classes_ = np.array([0, 1])
 
         self._read_trees()
 
@@ -66,8 +66,7 @@ class MockForecastModel(BaseEstimator, ClassifierMixin):
         :return: y : array-like of shape (n_samples,) or (n_samples, n_outputs)
             Predicted labels for X.
         """
-        predictions = np.argmax(self.predict_proba(X), axis=1)
-        return [self.classes_[i] for i in predictions]
+        return self.classes_[np.argmax(self.predict_proba(X), axis=1)]
 
     def predict_proba(self, X):
 
