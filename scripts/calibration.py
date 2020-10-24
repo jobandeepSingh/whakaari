@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.calibration import CalibratedClassifierCV
-from time import time
+from sklearn.metrics import accuracy_score
 
 
 # new class to mock the forecast_model class
@@ -17,12 +17,17 @@ class MockForecastModel(BaseEstimator, ClassifierMixin):
 
     def __init__(self, model_path: str):
         """
-
         :param model_path: path to model decision trees.
         """
         self.model_path = model_path
         self.trees = []
         self.feats = []
+        self.feats_idx = []
+
+        # classes_ gives the classes in numerical form
+        # means that the first column in predict_prob is associated with 0 and second is with 1
+        self.classes_ = [0, 1]
+
         self._read_trees()
 
     def _read_trees(self):
@@ -61,15 +66,25 @@ class MockForecastModel(BaseEstimator, ClassifierMixin):
         :return: y : array-like of shape (n_samples,) or (n_samples, n_outputs)
             Predicted labels for X.
         """
-        pass
+        predictions = np.argmax(self.predict_proba(X), axis=1)
+        return [self.classes_[i] for i in predictions]
 
     def predict_proba(self, X):
-        # initialise probability matrix, shape = nx2
+
+        if not self.feats_idx:
+            # check to make sure feats_idx array has been initialised
+            raise AssertionError("self.feats_idx is empty. Run prepare_for_calibration method.")
+
+        if isinstance(X, pd.DataFrame):
+            # convert to 2D numpy array
+            X = X.to_numpy()
+
+        # initialise probability matrix
         y_proba = np.zeros((X.shape[0], 2))
 
         for idx, tree in enumerate(self.trees):
             # use features from feature files when predicting so they match the features used for training
-            pred = tree.predict(X[self.feats[idx]])
+            pred = tree.predict(X[:, self.feats_idx[idx]])
 
             # turn the predictions into indices 0 and 1 by converting them to integer
             pred = list(map(int, np.round(pred)))
@@ -81,6 +96,15 @@ class MockForecastModel(BaseEstimator, ClassifierMixin):
         y_proba = y_proba/len(self.trees)
 
         return y_proba
+
+    def prepare_for_calibration(self, X):
+        # save the indices of columns corresponding to the features used in the trees
+        self.feats_idx = []
+        for features in self.feats:
+            self.feats_idx.append([X.columns.get_loc(f) for f in features])
+
+    def score(self, X, y, sample_weight=None):
+        return accuracy_score(y, self.predict(X), sample_weight=sample_weight)
 
 
 def calibration(download_data=False):
@@ -118,9 +142,13 @@ def calibration(download_data=False):
     # get feature and labels for eruption not used in training
     X, y = fm._extract_features(ti=te - month, tf=te + month)
 
-    cccv = CalibratedClassifierCV(classifier, cv='prefit')
-    cccv.fit(X, y['label'])
-    # TODO your_cccv.fit(X_validation, y_validation) <- This validation data is used solely for calibration purposes.
+    # save the indices of the columns corresponding to features for each tree
+    classifier.prepare_for_calibration(X)
+
+    calibrated_classifier = CalibratedClassifierCV(classifier,  method='sigmoid', cv='prefit')
+    calibrated_classifier.fit(X, y['label'])
+    # calibrated_classifier.score(X,y), classifier.score(X,y)
+    # calibrated_classifier.predict_proba(X,y), classifier.predict_proba(X,y)
 
 
 if __name__ == '__main__':
