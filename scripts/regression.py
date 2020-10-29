@@ -208,10 +208,10 @@ def create_plots_regression():
         # add title
         plt.title(f"Eruption: {eruptions[i]}")
         # legend
-        lines = [Line2D([0], [0], color='k', label='rsam'),
-                 Line2D([0], [0], color='g', label='binary target vector'),
-                 Line2D([0], [0], color='r', label='regression target vector'),
-                 Line2D([0], [0], color='b', label='eruption')]
+        lines = [Line2D([0], [0], color='k', label='RSAM'),
+                 Line2D([0], [0], color='g', label='Binary target vector'),
+                 Line2D([0], [0], color='r', label='Regression target vector'),
+                 Line2D([0], [0], color='b', label='Eruption')]
         plt.legend(handles=lines, loc='lower left')
         fig.tight_layout()
         plt.show()
