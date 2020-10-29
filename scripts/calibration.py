@@ -106,7 +106,7 @@ class MockForecastModel(BaseEstimator, ClassifierMixin):
         return accuracy_score(y, self.predict(X), sample_weight=sample_weight)
 
 
-def calibration(download_data=False):
+def calibration(download_data=False, plots=True):
     # constants
     month = timedelta(days=365.25 / 12)
 
@@ -146,8 +146,48 @@ def calibration(download_data=False):
 
     calibrated_classifier = CalibratedClassifierCV(classifier,  method='sigmoid', cv='prefit')
     calibrated_classifier.fit(X, y['label'])
-    # calibrated_classifier.score(X,y), classifier.score(X,y)
-    # calibrated_classifier.predict_proba(X,y), classifier.predict_proba(X,y)
+
+    if plots:
+        # ==== plot of calibrated probabilities vs thresholds ====
+        f, ax = plt.subplots(1, 1, figsize=(18, 12))
+
+        plt.axvline(0.8, color='pink', linewidth=5, zorder=1)
+        plt.scatter(classifier.predict_proba(X)[:, 1], calibrated_classifier.predict_proba(X)[:, 1],
+                    c='orange', s=60, zorder=2)
+        # plt.axhline(0.086, color='black', xmax=0.82, linewidth=2, zorder=1, ls='--')
+
+        plt.xlabel("Threshold for predicting eruption", fontsize=25)
+        plt.ylabel("Probability of eruption", fontsize=25)
+        plt.title("Threshold vs probability of eruption", fontsize=40)
+        for t in ax.get_xticklabels() + ax.get_yticklabels():  # increase of x and y tick labels
+            t.set_fontsize(20.)
+
+        os.makedirs(fm.plotdir, exist_ok=True)
+        plt.savefig(f"{fm.plotdir}/threshold_vs_probability.png", format='png', dpi=300)
+        plt.close()
+
+        # ==== plot of actual target vector, predicted consensus values and calibrated probabilities ====
+        forecast = fm.forecast(ti=te - month, tf=te + month, recalculate=True)
+        f, ax = plt.subplots(3, 1, figsize=(18, 12), sharex="all")
+
+        ax[0].plot(X.index, y['label'], linewidth=3)
+        ax[0].axvline(te, color='pink', linewidth=3)
+        ax[0].set_ylabel("Actual binary target", fontsize=17)
+        ax[1].plot(X.index, forecast['consensus'], linewidth=3)
+        ax[1].axvline(te, color='pink', linewidth=3)
+        ax[1].set_ylabel("Prediction Consensus", fontsize=17)
+        ax[2].plot(X.index, calibrated_classifier.predict_proba(X)[:, 1], linewidth=3)
+        ax[2].axvline(te, color='pink', linewidth=3)
+        ax[2].set_ylabel("Calibrated Probability", fontsize=17)
+        ax[2].set_xlabel("Time", fontsize=17)
+        f.suptitle("Actual Target, Prediction Consensus and Calibrated Probabilities", fontsize=40.)
+        # increase x and y tick labels
+        for t in ax[0].get_yticklabels() + ax[1].get_yticklabels() + ax[2].get_yticklabels() + ax[2].get_xticklabels():
+            t.set_fontsize(15.)
+
+        os.makedirs(fm.plotdir, exist_ok=True)
+        plt.savefig(f"{fm.plotdir}/actual_predictions_probabilities.png", format='png', dpi=300)
+        plt.close()
 
 
 if __name__ == '__main__':
