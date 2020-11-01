@@ -434,6 +434,7 @@ class RegressionModel(object):
         aggregated_feats = dict()
         for erp in self.data.tes:  # loop over all eruptions
             erp = f"{erp.year}-{erp.month}-{erp.day}"
+            # list of all combination of eruptions with num_erp_feats_aggregate eruptions
             all_combinations = list(combinations([i for i in range(len(features[erp]))], num_erp_feats_aggregate))
 
             # build 2d list for combination of features
@@ -573,9 +574,9 @@ class RegressionModel(object):
                         # plt.figure(figsize=(12, 6))
                         f, ax = plt.subplots(1, 1, figsize=(12, 12))
                         plt.scatter(x=fm[inds_seen][feat], y=self.ys[inds_seen], alpha=0.3, s=10)
-                        plt.title("Feature vs Time to eruption",  fontsize=40.)
+                        plt.title(f"Feature: {feat}",  fontsize=40.)
                         plt.ylabel("Time to eruption in seconds",  fontsize=25.)
-                        plt.xlabel(f"Feature: {feat}",  fontsize=25.)
+                        plt.xlabel(f"{feat} values",  fontsize=25.)
                         for t in ax.get_xticklabels() + ax.get_yticklabels():  # increase of x and y tick labels
                             t.set_fontsize(20.)
                         plt.tight_layout()
