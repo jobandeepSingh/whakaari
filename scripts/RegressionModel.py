@@ -1,28 +1,29 @@
-from scripts.TremorData import TremorData, _DAY, makedir, DEFAULT_SECS_BETWEEN_OBS, read_hdh5, \
-    write_to_hdf5, datetimeify, is_in_store
-from datetime import timedelta, datetime
-from tsfresh.transformers import FeatureSelector
-import pandas as pd
-import numpy as np
-from tsfresh.feature_extraction.settings import ComprehensiveFCParameters, MinimalFCParameters, EfficientFCParameters
-from typing import List, Dict, Set
-from tsfresh import extract_features
-from tsfresh.utilities.dataframe_functions import impute
-from inspect import getfile, currentframe
 import os
-from itertools import combinations, product
-from sklearn.linear_model import LinearRegression
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import pickle
+from datetime import timedelta, datetime
+from inspect import getfile, currentframe
+from itertools import combinations, product
+from typing import List, Dict
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.feature_selection import SelectKBest, f_regression
-import seaborn as sns
+from sklearn.linear_model import LinearRegression
+from tsfresh import extract_features
+from tsfresh.feature_extraction.settings import ComprehensiveFCParameters, MinimalFCParameters, EfficientFCParameters
+from tsfresh.transformers import FeatureSelector
+from tsfresh.utilities.dataframe_functions import impute
+
+from scripts.TremorData import TremorData, _DAY, makedir, DEFAULT_SECS_BETWEEN_OBS, read_hdh5, \
+    write_to_hdf5, is_in_store
+
 
 class RegressionModel(object):
     def __init__(self, window: int, period_before: int, overlap: float = 0., period_after: int = None,
                  data_streams: List[str] = ['rsam', 'mf', 'hf', 'dsar'], root: str = None, n_jobs: int = 6,
-                 sec_between_obs: int = DEFAULT_SECS_BETWEEN_OBS, freg = False):
+                 sec_between_obs: int = DEFAULT_SECS_BETWEEN_OBS, freg: bool = False):
         """
         Initialises RegressionModel Object
 
@@ -78,13 +79,11 @@ class RegressionModel(object):
         if self.io == self.iw:
             self.io -= 1
 
-        # QUESTION this should take care of decimal seconds window and sbo ?
         self.window = self.iw * self.sbo
         self.dtw = timedelta(seconds=self.window)
         self.overlap = self.io * 1. / self.iw
         self.dto = (1. - self.overlap) * self.dtw
 
-        # QUESTION What is this for?
         self.update_feature_matrix = True
 
         self.fm = None
@@ -168,8 +167,7 @@ class RegressionModel(object):
 
             Notes:
             ------
-            # FIXME this needs to change
-            Saves feature matrix to $rootdir/features/$root_features.csv to avoid recalculation.
+            Saves feature matrix to $rootdir/features/$root/features.h5 to avoid recalculation.
         """
         makedir(self.featdir)
 
@@ -185,26 +183,15 @@ class RegressionModel(object):
         else:  # defaults to efficient
             feats = "efficient"
             cfp = EfficientFCParameters()
-        # if self.compute_only_features:
-        #     cfp = dict([(k, cfp[k]) for k in cfp.keys() if k in self.compute_only_features])
-        # else:
-        #     # drop features if relevant
-        #     _ = [cfp.pop(df) for df in self.drop_features if df in list(cfp.keys())]
 
         fp = f"/{ti}_{tf}_{feats}_features"
         # check if feature matrix already exists and what it contains
         if is_in_store(fp, self.featfile):
-            # if os.path.isfile(self.featfile):
-            # FIXME need to change to hdf5
-            # t = pd.to_datetime(pd.read_csv(self.featfile, index_col=0, parse_dates=['time'], usecols=['time'],
-            #                                infer_datetime_format=True).index.values)
             feat_df = read_hdh5(self.featfile, fp)
             t = pd.to_datetime(feat_df.index.values)
 
             ti0, tf0 = t[0] - self.dtw, t[-1] - self.dtw  # -self.dtw as datetime of first window is end of window
             Nw0 = len(t)
-            # FIXME need to change to hdf5
-            # hds = pd.read_csv(self.featfile, index_col=0, nrows=1)
             hds = feat_df.columns
             hds = list(set([hd.split('__')[1] for hd in hds]))
 
@@ -223,7 +210,6 @@ class RegressionModel(object):
             cfp = dict([(k, cfp[k]) for k in cfp.keys() if k in all_cols])
 
             # option 3, expand both
-            # QUESTION what is purpose of update_feature_matrix
             if any([more_cols, pad_left > 0, pad_right > 0]) and self.update_feature_matrix:
                 fm = feat_df[:]
                 if more_cols:
@@ -322,8 +308,7 @@ class RegressionModel(object):
         feats = [feat.strip() for feat in file_contents[1:]]  # using [1:] to not read the title 'relevant features'
         return feats
 
-    def feature_selection(self, output: bool = True, recompute: bool = False,
-                          freg = False) -> Dict[str, List[List[str]]]:
+    def feature_selection(self, output: bool = True, recompute: bool = False) -> Dict[str, List[List[str]]]:
         """
         Do feature selection, by dropping each eruption (the not seen eruption) and then taking the rest of the
         eruptions and dropping an eruption at a time and selecting features based on the others.
@@ -348,9 +333,6 @@ class RegressionModel(object):
             eruption = self.get_erp(erp)
             eruption = f"{eruption.year}-{eruption.month}-{eruption.day}"
             rel_feats[eruption] = []
-
-        # p_vals = [[] for i in range(len(self.eps))]
-        # all_feats = [[] for i in range(len(self.eps))]
 
         for idx, erp_not_seen in enumerate(self.eps):  # loop through the eruptive periods
             # exclude the current eruptive period
@@ -392,17 +374,16 @@ class RegressionModel(object):
                     pvalues = select.pvalues_[indices]
                     features = self.fix_feature_names(fmp.columns.values[indices])
                     relevant_features = features[:n]
+
                 else:  # default is tsfresh feature selector
                     # find significant features
                     select = FeatureSelector(n_jobs=self.n_jobs, ml_task='regression')
-                    select.fit_transform(fmp, ysp['label'])  # using ['label'] as pd.Series is needed by FeatureSelector
+                    select.fit_transform(fmp, ysp['label'])
                     pvalues = select.p_values
                     features = self.fix_feature_names(select.features)
                     relevant_features = self.fix_feature_names(select.relevant_features)
 
                 rel_feats[eruption_not_seen].append(relevant_features)
-                # p_vals[idx].append(select.p_values)
-                # all_feats[idx].append(features)
 
                 if output:
                     # write features and their p_values to csv
@@ -571,7 +552,6 @@ class RegressionModel(object):
 
                     # top 3 important features scatter plots
                     for feat in feature_names[:3]:
-                        # plt.figure(figsize=(12, 6))
                         f, ax = plt.subplots(1, 1, figsize=(12, 12))
                         plt.scatter(x=fm[inds_seen][feat], y=self.ys[inds_seen], alpha=0.3, s=10)
                         plt.title(f"Feature: {feat}",  fontsize=40.)
@@ -609,7 +589,7 @@ class RegressionModel(object):
             plt.savefig(newfilename, format=ext, dpi=300)
         plt.close()
 
-    def get_classifier(self, classifier):
+    def get_classifier(self, classifier: str):
         if classifier == 'LR':  # linear regression
             model = LinearRegression(n_jobs=self.n_jobs)
         elif classifier == 'RF':  # random forest
