@@ -1,5 +1,6 @@
 # Whakaari
 Eruption forecast model for Whakaari (White Island, New Zealand). This model implements a time series feature engineering and classification workflow that issues eruption alerts based on real-time tremor data.
+This 'calibration' branch adds calibration of the model to the 2019 eruption.
 
 ## Installation
 
@@ -8,7 +9,7 @@ Ensure you have Anaconda Python 3.7 installed. Then
 1. Clone the repo
 
 ```bash
-git clone https://github.com/ddempsey/whakaari
+git clone --single-branch --branch calibration https://github.com/jobandeepSingh/whakaari.git
 ```
 
 2. CD into the repo and create a conda environment
@@ -37,6 +38,14 @@ To run the models, open ```forecast_model.py```, comment/uncomment the forecasts
 cd scripts
 
 python forecast_model.py
+```
+
+## Calibration
+Calibration is included in ```scripts/calibration.py```. The ```MockForecastModel``` class mocks the model object so that it can be used for calibration with ```sklearn.calibration.CalibratedClassifierCV```. The current setup of calibration is to build a ```ForecastModel``` which is trained between 2011-01-01 and 2020-01-01 with one month either side of the most recent 2019 eruption not included. Next a ```MockForecastModel``` object is initialised and calibrated using the 2019 eruption data. To run calibration in a terminal type:
+```bash
+cd scripts
+
+python calibration.py
 ```
 
 ## Disclaimers
