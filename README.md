@@ -6,7 +6,7 @@ This 'calibration' branch adds calibration of the model to the 2019 eruption.
 
 Ensure you have Anaconda Python 3.7 installed. Then
 
-1. Clone the repo
+1. Clone this branch of the repo
 
 ```bash
 git clone --single-branch --branch calibration https://github.com/jobandeepSingh/whakaari.git
