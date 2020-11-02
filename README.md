@@ -1,14 +1,16 @@
 # Whakaari
 Eruption forecast model for Whakaari (White Island, New Zealand). This model implements a time series feature engineering and classification workflow that issues eruption alerts based on real-time tremor data.
 
+An estimated time to eruption regression problem has been attempted. A workflow using time series features and machine learning algorithms to predict the time to eruption has been implemented with limited success. 
+
 ## Installation
 
 Ensure you have Anaconda Python 3.7 installed. Then
 
-1. Clone the repo
+1. Clone this branch of the repo
 
 ```bash
-git clone https://github.com/ddempsey/whakaari
+git clone --single-branch --branch regression https://github.com/jobandeepSingh/whakaari.git
 ```
 
 2. CD into the repo and create a conda environment
@@ -23,7 +25,7 @@ conda activate whakaari_env
 
 The installation has been tested on Windows, Mac and Unix operating systems. Total install with Anaconda Python should be less than 10 minutes.
 
-## Running models
+## Running Classification Models
 Three examples have been included in ```scripts/forecast_model.py```. 
 
 The first, ```forecast_test()``` trains on a small subset of tremor data in 2012 and then constructs a forecast of the Aug 2013 eruption. It will take about 10 minutes to run on a desktop computer and produces a forecast image in ../plots/test/forecast_Aug2013.png
@@ -38,6 +40,19 @@ cd scripts
 
 python forecast_model.py
 ```
+
+## Regression
+The ```scripts/regression.py``` script has 4 different initialisations of the ```RegressionModel``` (rm object) which is implemented in ```scripts/RegressionModel.py```. 
+
+The first rm object use windows of 30 seconds with no overlap, and data 48 hours either side of eruptions. The second rm object is the same as the first but uses f_regression for feature selection. The third is the same as the first but includes the 'inverse rsam' signal. The fourth is the same as the first but includes the 'inverse rsam' signal and uses f_regression for feature selection. Running any of these will redult in 60 models being built and saved, along with the respective plots.
+
+Uncomment which model you want to run and then type this into the terminal:
+```bash
+cd scripts
+
+python regression.py
+```
+
 
 ## Disclaimers
 1. This eruption forecast model is not guaranteed to predict every future eruption, it only increases the likelihood. In our paper, we discuss the conditions under which the forecast model is likely to perform poorly.
