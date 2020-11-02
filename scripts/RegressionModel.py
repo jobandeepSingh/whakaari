@@ -31,9 +31,14 @@ class RegressionModel(object):
         :param period_before: Period (in hours) before an eruption to consider
         :param overlap: Fraction of overlap between adjacent windows. Set this to 1. for overlap of entire
                         window minus 1 data point.
-        :param period_after: Period (in hours) after an eruption to consider
+        :param period_after: Period (in hours) after an eruption to consider. Defaults to same as period_before.
         :param data_streams: Data streams and transforms from which to extract features.
-        :param root:
+        :param root: Naming convention for forecast files. If not given, will default to
+                'fm_*Tw*wndw_*eta*ovlp_*Tlf*lkfd_*ds*' where
+                Tw is the window length, eta is overlap fraction, Tlf is look-forward and ds are data streams.
+        :param n_jobs: number of CPU cores available for parallelisation. Defaults to 6.
+        :param sec_between_obs: seconds between observations when downloading data.
+        :param freg: boolean if f_regression to be used for feature selection. Defaults to False.
         """
         self.n_jobs = n_jobs
         self.window = window
